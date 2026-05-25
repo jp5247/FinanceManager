@@ -13,7 +13,7 @@ Phase 0 (decisions and spikes). No application code yet.
 | OD-1 | Tech stack | **Tauri + React + Rust core** |
 | OD-2 | Storage | **JSON + CSV in Phase 1**, migration path to SQLite (single file per user) in Phase 2 behind a `StorageRepository` seam |
 | OD-3 | Multi-user auth | **Passphrase + OS-keystore convenience unlock** (Argon2id KDF; DPAPI / Keychain / Secret Service for one-tap unlock) |
-| OD-4 | Encryption at rest | **Default OFF**, user-enabled in settings. Envelope code is still built in Phase 1; toggle wires it in. |
+| OD-4 | Encryption at rest | **Default ON** (revised after Phase-0 spike — extracted statement text exposed full PII: name, address, email, card number). Argon2id KDF + OS-keystore convenience unlock. |
 | OD-5 | Allowed outbound calls | Merchant canonicalization lookup (merchant string only), signed loan/tax rule-pack download, Tauri auto-update check. No others. |
 | OD-6 | OCR | **In scope for Phase 1**, opt-in per upload. Confidence floor + always-flag policy mandatory. |
 | OD-7 | Bank coverage | Hand-tuned adapters for **HDFC, SBI, ICICI, Axis** + generic heuristic parser + manual-mapping fallback for everything else. |
