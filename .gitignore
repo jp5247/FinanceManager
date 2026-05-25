@@ -40,10 +40,8 @@ data/
 *.pdf
 *.PDF
 # Spike output folders contain extracted text from real PDFs (PII)
-spikes/**/out/
-spikes/**/out-ocr/
-spikes/**/fixtures-output/
-spikes/**/fixtures-output-ocr/
+spikes/**/out*/
+spikes/**/fixtures-output*/
 # Anonymized golden fixtures may be committed if explicitly opted in:
 !docs/**/*.pdf
 !**/fixtures/anonymized/*.pdf
