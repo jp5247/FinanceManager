@@ -125,6 +125,23 @@ The findings translate cleanly into the per-bank adapter spec:
 5. **Header-skip logic must be page-aware** — SBI's preamble is multi-page; HDFC's is short.
 6. **Password-hint registry per issuer:** HDFC savings = "customer ID". SBI savings = user-set (no universal hint — show "your statement password from net banking").
 
+### Phase-2 follow-up — auto-decrypt via identity-facts vault
+
+Observation while running the spike: each issuer uses a stable per-customer formula. Once the customer's identity facts (DOB, customer ID, account number, card last-4) are captured once, ~80% of Indian bank statements decrypt without prompting. Captured for future Phase-2 design work — not built in Phase 1.
+
+Known conventions to seed the engine:
+
+| Issuer | Convention |
+|---|---|
+| HDFC savings | Customer ID |
+| HDFC CC | First 4 of name + DDMM of DOB |
+| SBI savings | User-set; default often `name3 + DDMMYYYY` |
+| ICICI CC | First 4 of name + DDMM of DOB |
+| Axis CC | DDMM of DOB + last 4 of card |
+| Citi/SCB/Amex | DOB + last 4 of card (variants) |
+
+Design sketch (do not build yet): three layers applied in order — (1) cached password per `(profile, issuer, account-suffix)`, (2) convention-engine guesses from a `BankAdapter::derive_passwords(IdentityFacts, StatementMeta) → Vec<String>`, (3) user prompt. Identity facts live in the encrypted envelope; viewing them unmasked requires re-auth (not just session unlock); every derivation event is hash-chain-audit-logged; facts are explicitly out of the merchant-lookup egress allowlist; one-click wipe in settings. UI must distinguish "statement PDF passwords" from "net-banking credentials" — we only handle the former.
+
 ## 5. OCR path
 
 Not exercised — no scanned/image-only fixture in the corpus. Per OD-6 the OCR path is opt-in within Phase 1 and we'll exercise the spike when a real scanned statement enters the picture. Defer Tesseract install until then.
