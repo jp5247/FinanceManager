@@ -93,16 +93,19 @@ fn try_pdfium(
 
         let doc = match doc_result {
             Ok(d) => d,
-            Err(PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordRequired)) => {
-                return Ok((
-                    String::new(),
-                    Outcome::PasswordProtected,
-                    None,
-                    None,
-                    vec!["password required".to_string()],
-                ));
+            Err(e) => {
+                let msg = format!("{e:?}").to_lowercase();
+                if msg.contains("password") {
+                    return Ok((
+                        String::new(),
+                        Outcome::PasswordProtected,
+                        None,
+                        None,
+                        vec![format!("password required: {e:?}")],
+                    ));
+                }
+                return Err(anyhow::anyhow!("pdfium load failed: {e:?}"));
             }
-            Err(e) => return Err(anyhow::anyhow!("pdfium load failed: {e:?}")),
         };
 
         let pages = doc.pages();
