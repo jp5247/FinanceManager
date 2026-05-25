@@ -1,0 +1,30 @@
+[package]
+name = "fm-pdf-parse-spike"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "Phase-0 spike: evaluate the Rust PDF stack against real Indian bank statements"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+csv = "1"
+walkdir = "2"
+pdfium-render = "0.8"
+pdf-extract = "0.7"
+image = "0.25"
+chrono = { version = "0.4", features = ["serde"] }
+
+[[bin]]
+name = "parse-text"
+path = "src/bin/parse_text.rs"
+
+[[bin]]
+name = "parse-scanned"
+path = "src/bin/parse_scanned.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

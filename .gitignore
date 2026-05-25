@@ -1,0 +1,49 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / Tauri (future)
+node_modules/
+dist/
+dist-ssr/
+.vite/
+src-tauri/target/
+
+# IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# User data (must never be committed)
+data/
+**/data/users/
+
+# Real bank PDFs contain PII — never commit, anywhere in the repo
+*.pdf
+*.PDF
+# Anonymized golden fixtures may be committed if explicitly opted in:
+!docs/**/*.pdf
+!**/fixtures/anonymized/*.pdf
+
+# Build artifacts
+*.exe
+*.dll
+*.dylib
+*.so
+!third_party/**/*.dll
