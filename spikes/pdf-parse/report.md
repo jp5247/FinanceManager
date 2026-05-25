@@ -93,6 +93,38 @@ Multi-line narrations (UPI descriptions wrap across 2–3 lines in the raw strea
 
 **HDFC savings statement password equals the customer ID.** This is visible in the extracted text itself (`Cust ID : 154318469`) and matches the password supplied. Implication for the upload UI: the password-prompt drawer should hint "customer ID" for HDFC savings PDFs, and the same value can be cached per user profile for subsequent months.
 
+## 4b. Cross-issuer test — SBI savings
+
+Added late in the spike to test format generality. The SBI savings PDF is also password-protected (SBI default).
+
+| File | pdfium outcome | Pages | rows~ | ms |
+|---|---|---|---|---|
+| SBI savings account | Ok (decrypted) | 4 | 25 | 44 |
+
+### Format differences SBI vs HDFC
+
+The Rust + pdfium-render extraction stack handled both with no code changes. Differences land entirely in the post-extraction normalization stage — exactly where the per-bank adapter contract belongs.
+
+| Aspect | HDFC | SBI |
+|---|---|---|
+| Per-transaction lines in raw text | 1–2 lines | **5–7 lines** (aggressive multi-line wrap of narration) |
+| Amount column model | Inline within row (`C 1,582.00`) | **Positional columns** with `-` placeholders for empty cells: `- 1,500.00 - 540.20` = (no-withdrawal-marker, withdrawal=1500, no-deposit, balance=540.20) |
+| Rupee glyph | Surfaces as Latin `"C"` | Absent (plain numerics) |
+| Number formatting | `21,447.00` (Western) | `1,12,722.70` (**Indian lakhs comma**); `CR` suffix on credit balances |
+| Header preamble before transactions | Minimal | 2 pages of relationship-summary / branch info |
+| Statement password convention | Customer ID (numeric) | User-set; observed `JAI24111998` = first-3-letters-of-name + DOB DDMMYYYY (common but not universal) |
+
+### Adapter-contract implications
+
+The findings translate cleanly into the per-bank adapter spec:
+
+1. **Date-anchored row segmentation works across both banks** — leading `DD/MM/YYYY` (or `DD/MM/YY`) is a reliable transaction anchor.
+2. **Amount-column model must be declared by the adapter.** HDFC = inline-with-currency-prefix. SBI = positional fixed-column with `-` placeholders.
+3. **Number normalizer must handle Indian lakhs format** (`1,12,722.70` → `112722.70`) in addition to standard comma format.
+4. **`CR` / `DR` / `+` / `-` markers and sign conventions are issuer-specific** — express them per adapter.
+5. **Header-skip logic must be page-aware** — SBI's preamble is multi-page; HDFC's is short.
+6. **Password-hint registry per issuer:** HDFC savings = "customer ID". SBI savings = user-set (no universal hint — show "your statement password from net banking").
+
 ## 5. OCR path
 
 Not exercised — no scanned/image-only fixture in the corpus. Per OD-6 the OCR path is opt-in within Phase 1 and we'll exercise the spike when a real scanned statement enters the picture. Defer Tesseract install until then.
@@ -105,9 +137,9 @@ Not exercised — no scanned/image-only fixture in the corpus. Per OD-6 the OCR 
 | Password-protected fixture round-trip | yes | both savings PDFs decrypt and extract with the customer-ID password | ✅ |
 | OCR 5-page < 60 s on reference laptop | <60 s | deferred to in-phase work per OD-6 | n/a |
 | No pdfium crashes/hangs | none | none | ✅ |
-| Cross-issuer test | optional | deferred to Phase-2 adapter work per OD-7 | n/a |
+| Cross-issuer test | optional | SBI savings tested — 4 pages, ~25 rows, 44 ms after password | ✅ |
 
-**Recommendation: GO. Gate G0 passes.** The Tauri + React + Rust + pdfium-render architecture is locked. Phase-1 foundations can begin.
+**Recommendation: GO. Gate G0 passes with cross-issuer evidence.** The Tauri + React + Rust + pdfium-render architecture is locked. The framework handles HDFC CC, HDFC savings (encrypted), and SBI savings (encrypted, multi-line layout) without any code changes — all format variance is post-extraction, which is exactly where the per-bank adapter contract belongs. Phase-1 foundations can begin.
 
 ## 7. Architectural decisions reinforced by the spike
 
