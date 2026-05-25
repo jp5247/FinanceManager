@@ -29,7 +29,7 @@ Desktop.ini
 !.env.example
 *.pem
 *.key
-secrets/
+secrets/*
 !secrets/README.md
 
 # User data (must never be committed)
