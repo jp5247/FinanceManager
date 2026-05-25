@@ -153,13 +153,18 @@ Upload traceability for each import batch.
 ```
 
 ### 3.6 raw-transactions.json
-Parser output with minimal transformation.
+Parser output with minimal transformation. Every row carries full source provenance.
 
 ```json
 [
   {
+    "importId": "imp-2026-05-25-01",
     "sourceFile": "hdfc-cc-apr.pdf",
+    "sourceSha256": "<hash>",
+    "sourcePage": 2,
     "rowNumber": 38,
+    "parserVersion": "hdfc-cc@1.0.0",
+    "parserBackend": "pdfium",
     "txnDate": "2026-04-18",
     "description": "SWIGGY INSTAMART",
     "debit": 850.0,
@@ -169,13 +174,27 @@ Parser output with minimal transformation.
 ]
 ```
 
+Source provenance fields:
+
+| Field | Purpose |
+|---|---|
+| `importId` | Links the row back to its batch in [`file-meta.json`](#35-file-metajson). The same filename can recur across imports; `importId` disambiguates. |
+| `sourceFile` | Original PDF filename inside the import. |
+| `sourceSha256` | Content hash of the source PDF. Survives renames; primary key for duplicate-import detection. |
+| `sourcePage` | 1-based page number within the PDF. Speeds debugging when `rowNumber` alone is ambiguous. |
+| `rowNumber` | Row position within the extracted text stream (or 1-based row index within `sourcePage`, adapter's choice — declared by the adapter). |
+| `parserVersion` | SemVer of the bank adapter that produced this row (`<adapterId>@<version>`). When a parser changes, we know which rows are eligible for re-extraction. |
+| `parserBackend` | `pdfium` \| `pdf-extract` \| `ocr-tesseract`. When backends disagree, we know which one this row came from. |
+
 ### 3.7 normalized-transactions.csv
-Canonical transaction rows used by analytics.
+Canonical transaction rows used by analytics. Source-provenance columns are appended at the end so the analytics-relevant fields read first.
 
 ```csv
-transactionId,userId,txnDate,postDate,amount,currency,direction,kind,merchantRaw,merchantCanonical,category,subCategory,accountType,accountMask,isTransfer,isReimbursement,linkedTransactionId,confidence,flagged,flagReason,sourceFile,sourceRow
-trx-001,user-001,2026-04-18,2026-04-18,850,INR,debit,expense,SWIGGY INSTAMART,Swiggy,Food,Groceries,credit-card,XXXX1234,false,false,,0.93,false,,hdfc-cc-apr.pdf,38
+transactionId,userId,txnDate,postDate,amount,currency,direction,kind,merchantRaw,merchantCanonical,category,subCategory,accountType,accountMask,isTransfer,isReimbursement,linkedTransactionId,confidence,flagged,flagReason,importId,sourceFile,sourceSha256,sourcePage,sourceRow,parserVersion,parserBackend
+trx-001,user-001,2026-04-18,2026-04-18,850,INR,debit,expense,SWIGGY INSTAMART,Swiggy,Food,Groceries,credit-card,XXXX1234,false,false,,0.93,false,,imp-2026-05-25-01,hdfc-cc-apr.pdf,<sha256>,2,38,hdfc-cc@1.0.0,pdfium
 ```
+
+Source-provenance columns mirror the fields documented in §3.6.
 
 ### 3.8 parse-errors.json
 Rows that could not be parsed reliably.
@@ -330,6 +349,9 @@ Append-only per action event log.
 - month keys must follow YYYY-MM.
 - parse errors and unresolved flags must be retained for traceability.
 - analytics cannot run if required source artifacts are missing.
+- every transaction row (raw and normalized) must carry the seven source-provenance fields documented in §3.6; rows missing any of them are rejected at import.
+- `(importId, sourceFile, sourcePage, rowNumber)` is the natural key for re-locating a transaction in its original PDF; collisions within a single import are a parser bug.
+- `parserVersion` bumps trigger re-extraction eligibility: when an adapter's version advances, the affected `importId` batches can be re-parsed without re-uploading the PDF.
 
 ## 7. Recommended implementation notes
 - Prefer JSON for nested entities, CSV for large tabular transactions.
