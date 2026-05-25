@@ -47,3 +47,8 @@ data/
 *.dylib
 *.so
 !third_party/**/*.dll
+
+# Vendored pdfium binaries (downloaded by developer, not committed)
+pdfium-win-x64/
+pdfium-mac-*/
+pdfium-linux-*/
