@@ -3,12 +3,54 @@ use crate::key::{KeyBytes, KEY_LEN};
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 
 pub const SALT_LEN: usize = 16;
 
 /// 16-byte random salt. Safe to store on disk alongside the sealed key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Serializes to/from a 32-char lowercase hex string so `profile.json` stays
+/// human-inspectable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Salt(pub [u8; SALT_LEN]);
+
+impl Salt {
+    pub fn to_hex(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::with_capacity(SALT_LEN * 2);
+        for b in self.0 {
+            write!(s, "{b:02x}").expect("write to String never fails");
+        }
+        s
+    }
+
+    pub fn from_hex(s: &str) -> Result<Self, CryptoError> {
+        if s.len() != SALT_LEN * 2 {
+            return Err(CryptoError::InvalidEnvelope("salt hex must be 32 chars"));
+        }
+        let mut out = [0u8; SALT_LEN];
+        for (i, byte_out) in out.iter_mut().enumerate() {
+            let pair = &s[i * 2..i * 2 + 2];
+            *byte_out = u8::from_str_radix(pair, 16)
+                .map_err(|_| CryptoError::InvalidEnvelope("salt hex contains non-hex"))?;
+        }
+        Ok(Salt(out))
+    }
+}
+
+impl TryFrom<String> for Salt {
+    type Error = CryptoError;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::from_hex(&s)
+    }
+}
+
+impl From<Salt> for String {
+    fn from(s: Salt) -> Self {
+        s.to_hex()
+    }
+}
 
 pub fn generate_salt() -> Salt {
     let mut s = [0u8; SALT_LEN];
@@ -17,7 +59,7 @@ pub fn generate_salt() -> Salt {
 }
 
 /// Argon2id cost parameters. Defaults target ~500 ms on a 2020-class laptop.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KdfParams {
     /// Memory in KiB.
     pub m_cost: u32,

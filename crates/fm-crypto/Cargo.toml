@@ -10,6 +10,7 @@ description = "FinanceManager — AES-256-GCM envelope, Argon2id KDF, OS-keystor
 
 [dependencies]
 fm-core = { path = "../fm-core" }
+serde = { workspace = true }
 thiserror = { workspace = true }
 aes-gcm = "0.10"
 argon2 = "0.5"

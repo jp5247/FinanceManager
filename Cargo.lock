@@ -909,6 +909,7 @@ dependencies = [
  "fm-core",
  "keyring",
  "rand",
+ "serde",
  "thiserror 2.0.18",
  "zeroize",
 ]
@@ -918,6 +919,20 @@ name = "fm-parser"
 version = "0.0.1"
 dependencies = [
  "fm-core",
+]
+
+[[package]]
+name = "fm-profile"
+version = "0.0.1"
+dependencies = [
+ "fm-core",
+ "fm-crypto",
+ "fm-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
 ]
 
 [[package]]

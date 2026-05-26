@@ -1,0 +1,21 @@
+[package]
+name = "fm-profile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "FinanceManager — profile lifecycle: create, unlock, list. Orchestrates fm-storage + fm-crypto."
+
+[dependencies]
+fm-core = { path = "../fm-core" }
+fm-storage = { path = "../fm-storage" }
+fm-crypto = { path = "../fm-crypto" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { version = "0.3", features = ["formatting", "macros"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
