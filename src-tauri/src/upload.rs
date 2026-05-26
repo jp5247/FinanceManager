@@ -2,9 +2,14 @@
 //! full fm-pdf → fm-parser → encrypted storage chain, plus the history /
 //! detail / delete operations the Upload UI uses for past imports.
 
+use crate::llm;
+use crate::llm_config;
+use crate::merchant_cache;
 use crate::state::AppState;
 use crate::user_rules::{append_rule, load_rules, NewRuleSpec};
-use fm_categorize::{build_rules, categorize, compile_stored, RuleSet, UNCATEGORIZED};
+use fm_categorize::{
+    build_rules, categorize, compile_stored, extract_merchant, RuleSet, UNCATEGORIZED,
+};
 use fm_core::UserId;
 use fm_crypto::{open, seal, KeyBytes};
 use fm_parser::{default_adapters, detect_adapter, RawTransaction};
@@ -80,6 +85,15 @@ pub struct UploadResult {
     pub total_credit: String,
     pub category_breakdown: Vec<CategoryBreakdown>,
     pub transactions: Vec<RawTransaction>,
+    /// Surface a non-fatal note about external categorization: disabled,
+    /// no key, network error, etc. The upload itself always succeeds —
+    /// affected rows just stay uncategorized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup_warning: Option<String>,
+    /// Count of rows whose category came from the LLM in this run. Lets
+    /// the UI surface "X categorized via Gemini" or similar.
+    #[serde(default)]
+    pub llm_categorized_count: u32,
 }
 
 #[tauri::command]
@@ -117,6 +131,10 @@ pub fn upload_pdf(
     let rules = build_rules(user_rules);
     apply_categories(&mut rows, &rules);
 
+    // External lookup: for rows still uncategorized, hit the merchant cache
+    // then optionally the LLM. Best-effort — never fails the upload.
+    let lookup = apply_external_lookup(&state, &user, &dek, &mut rows);
+
     let summary = summarise(&rows);
     let category_breakdown = build_category_breakdown(&rows);
 
@@ -152,7 +170,10 @@ pub fn upload_pdf(
         &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
     )?;
 
-    Ok(into_upload_result(meta, rows))
+    let mut result = into_upload_result(meta, rows);
+    result.lookup_warning = lookup.warning;
+    result.llm_categorized_count = lookup.llm_count;
+    Ok(result)
 }
 
 /// Walk the user's `source/uploads/` tree and return one [`FileMeta`] per
@@ -163,8 +184,6 @@ pub fn list_imports(state: State<AppState>) -> Result<Vec<FileMeta>, String> {
     list_imports_internal(&state, &user, &dek)
 }
 
-/// Load one import's metadata + every parsed transaction. Used when the user
-/// clicks a row in the Previous imports list.
 #[tauri::command]
 pub fn get_import(import_id: String, state: State<AppState>) -> Result<UploadResult, String> {
     let (user, dek) = session(&state)?;
@@ -189,16 +208,6 @@ pub fn get_import(import_id: String, state: State<AppState>) -> Result<UploadRes
     Ok(into_upload_result(meta_doc.data, txn_doc.data))
 }
 
-/// Set / clear the category on one specific transaction row. Saves the
-/// update, recomputes the per-import category breakdown, and returns the
-/// fresh [`UploadResult`] so the UI can re-render.
-///
-/// Pass an empty `category` to clear the assignment and mark the row
-/// uncategorized again.
-///
-/// If `save_as_rule` is provided, a new user rule is appended to the
-/// per-profile rules file. The new rule applies to FUTURE uploads — it does
-/// not retroactively recategorize other rows in this or prior imports.
 #[tauri::command]
 pub fn recategorize_transaction(
     import_id: String,
@@ -238,10 +247,7 @@ pub fn recategorize_transaction(
         row.category_rule_id = Some("manual".to_string());
     }
 
-    // Optionally persist a user rule for future matches.
     if let Some(spec) = save_as_rule {
-        // The new rule's category should match what the user just assigned —
-        // either fall back to the explicit category if the spec disagrees.
         let spec = NewRuleSpec {
             match_type: spec.match_type,
             match_value: spec.match_value,
@@ -276,7 +282,6 @@ pub fn recategorize_transaction(
     Ok(into_upload_result(meta, rows))
 }
 
-/// Remove an import's directory entirely. Idempotent — missing dir is OK.
 #[tauri::command]
 pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), String> {
     let (user, _dek) = session(&state)?;
@@ -391,6 +396,8 @@ fn into_upload_result(meta: FileMeta, transactions: Vec<RawTransaction>) -> Uplo
         total_credit: meta.total_credit,
         category_breakdown: meta.category_breakdown,
         transactions,
+        lookup_warning: None,
+        llm_categorized_count: 0,
     }
 }
 
@@ -433,14 +440,189 @@ fn apply_categories(rows: &mut [RawTransaction], rules: &RuleSet) {
 }
 
 #[derive(Default)]
-struct CatTotals {
-    debit_count: u32,
-    credit_count: u32,
-    total_debit: Decimal,
-    total_credit: Decimal,
+struct LookupOutcome {
+    warning: Option<String>,
+    llm_count: u32,
+}
+
+struct Pending {
+    row_idx: usize,
+    merchant: String,
+    direction: llm::Direction,
+    cache_key: String,
+}
+
+fn collect_pending(rows: &[RawTransaction]) -> Vec<Pending> {
+    let mut out = Vec::new();
+    for (idx, r) in rows.iter().enumerate() {
+        // Only consider rows that are explicitly Uncategorized — anything
+        // with a real category was matched by user/curated rules and we
+        // don't want to second-guess that.
+        if r.category.as_deref() != Some(UNCATEGORIZED) {
+            continue;
+        }
+        let extracted = extract_merchant(&r.description);
+        if extracted.name.is_empty() {
+            continue;
+        }
+        let direction = if r.debit.is_some() {
+            llm::Direction::Debit
+        } else if r.credit.is_some() {
+            llm::Direction::Credit
+        } else {
+            continue;
+        };
+        let key = merchant_cache::cache_key(&extracted.name);
+        out.push(Pending {
+            row_idx: idx,
+            merchant: extracted.name,
+            direction,
+            cache_key: key,
+        });
+    }
+    out
+}
+
+fn apply_external_lookup(
+    state: &State<AppState>,
+    user: &UserId,
+    dek: &KeyBytes,
+    rows: &mut [RawTransaction],
+) -> LookupOutcome {
+    let pending = collect_pending(rows);
+    if pending.is_empty() {
+        return LookupOutcome::default();
+    }
+
+    // Step 1 — cache hits.
+    let mut cache = match merchant_cache::load(state, user, dek) {
+        Ok(c) => c,
+        Err(e) => {
+            return LookupOutcome {
+                warning: Some(format!("merchant cache load failed: {e}")),
+                llm_count: 0,
+            };
+        }
+    };
+    let mut still_pending: Vec<Pending> = Vec::new();
+    for p in pending {
+        if let Some(entry) = cache.entries.get(&p.cache_key) {
+            if entry.category != UNCATEGORIZED {
+                rows[p.row_idx].category = Some(entry.category.clone());
+                rows[p.row_idx].category_rule_id = Some(format!("cache:{}", entry.source));
+            }
+            // Skip even when cached as Uncategorized — we've already asked
+            // about this merchant; don't re-pay.
+        } else {
+            still_pending.push(p);
+        }
+    }
+
+    if still_pending.is_empty() {
+        return LookupOutcome::default();
+    }
+
+    // Step 2 — LLM.
+    let cfg = match llm_config::load(state, user, dek) {
+        Ok(c) => c,
+        Err(e) => {
+            return LookupOutcome {
+                warning: Some(format!("llm config load failed: {e}")),
+                llm_count: 0,
+            };
+        }
+    };
+    if !cfg.enabled {
+        return LookupOutcome {
+            warning: Some(format!(
+                "LLM categorization disabled — {} merchant(s) left uncategorized",
+                still_pending.len()
+            )),
+            llm_count: 0,
+        };
+    }
+    if cfg.api_key.is_empty() {
+        return LookupOutcome {
+            warning: Some(
+                "LLM enabled but no API key configured — open Settings to add one".to_string(),
+            ),
+            llm_count: 0,
+        };
+    }
+
+    // Deduplicate by cache_key before sending.
+    let mut by_key: BTreeMap<String, (String, llm::Direction)> = BTreeMap::new();
+    for p in &still_pending {
+        by_key
+            .entry(p.cache_key.clone())
+            .or_insert_with(|| (p.merchant.clone(), p.direction));
+    }
+    let items: Vec<llm::LookupItem> = by_key
+        .values()
+        .map(|(merchant, direction)| llm::LookupItem {
+            merchant: merchant.clone(),
+            direction: *direction,
+        })
+        .collect();
+
+    let lookup_results = match llm::categorize_via_gemini(&cfg.api_key, &cfg.model, &items) {
+        Ok(r) => r,
+        Err(e) => {
+            return LookupOutcome {
+                warning: Some(format!("LLM lookup failed: {e}")),
+                llm_count: 0,
+            };
+        }
+    };
+
+    let now = merchant_cache::now_rfc3339();
+    let mut by_key_result: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for r in &lookup_results {
+        let key = merchant_cache::cache_key(&r.merchant);
+        by_key_result.insert(key.clone(), r.category.clone());
+        cache.entries.insert(
+            key,
+            merchant_cache::MerchantCacheEntry {
+                category: r.category.clone(),
+                source: "gemini".to_string(),
+                looked_up_at: now.clone(),
+            },
+        );
+    }
+
+    let mut llm_count: u32 = 0;
+    for p in still_pending {
+        if let Some(cat) = by_key_result.get(&p.cache_key) {
+            if cat != UNCATEGORIZED {
+                rows[p.row_idx].category = Some(cat.clone());
+                rows[p.row_idx].category_rule_id = Some("llm:gemini".to_string());
+                llm_count += 1;
+            }
+        }
+    }
+
+    if let Err(e) = merchant_cache::save(state, user, dek, &cache) {
+        return LookupOutcome {
+            warning: Some(format!("merchant cache save failed: {e}")),
+            llm_count,
+        };
+    }
+
+    LookupOutcome {
+        warning: None,
+        llm_count,
+    }
 }
 
 fn build_category_breakdown(rows: &[RawTransaction]) -> Vec<CategoryBreakdown> {
+    #[derive(Default)]
+    struct CatTotals {
+        debit_count: u32,
+        credit_count: u32,
+        total_debit: Decimal,
+        total_credit: Decimal,
+    }
     let mut by_cat: BTreeMap<String, CatTotals> = BTreeMap::new();
     for r in rows {
         let cat = r
@@ -468,7 +650,6 @@ fn build_category_breakdown(rows: &[RawTransaction]) -> Vec<CategoryBreakdown> {
             total_credit: format!("{:.2}", t.total_credit),
         })
         .collect();
-    // Sort by total_debit DESC primarily; credit-only categories fall to the end.
     out.sort_by(|a, b| {
         let ad: Decimal = a.total_debit.parse().unwrap_or(Decimal::ZERO);
         let bd: Decimal = b.total_debit.parse().unwrap_or(Decimal::ZERO);

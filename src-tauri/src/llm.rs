@@ -1,0 +1,419 @@
+//! Gemini-backed categorization client.
+//!
+//! Sends a batched prompt of merchant names + direction to Google's
+//! Generative Language API. Per OD-5, **only** these two fields per row
+//! leave the device — never amounts, account masks, dates, ref-ids, or
+//! customer-identifying narration.
+//!
+//! Errors are non-fatal: if the LLM is unreachable, mis-configured, or
+//! returns gibberish, the upload still succeeds — the affected rows just
+//! stay uncategorized.
+
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+/// What the LLM is told to choose from. Kept in sync with the categories
+/// the UI's recategorize picker offers.
+const ALLOWED_CATEGORIES: &[&str] = &[
+    "ATM / Cash",
+    "Air Travel",
+    "Bank Transfer",
+    "Bills",
+    "Cab / Ride",
+    "Credit Card Payment",
+    "Dividend",
+    "Electricity",
+    "Food Delivery",
+    "Fuel",
+    "Gas",
+    "Groceries",
+    "Insurance",
+    "Interest",
+    "Internet",
+    "Investments",
+    "Loan EMI",
+    "Maintenance",
+    "Mobile",
+    "Online Shopping",
+    "Personal Transfer",
+    "Refund",
+    "Rent",
+    "Restaurants",
+    "Salary",
+    "Settlement / Split",
+    "Tax",
+    "Train Travel",
+    "UPI Transfer",
+    "Water",
+    "Uncategorized",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Debit,
+    Credit,
+}
+
+impl Direction {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Direction::Debit => "outgoing",
+            Direction::Credit => "incoming",
+        }
+    }
+}
+
+/// One row's worth of input — only the merchant string + direction.
+#[derive(Clone, Debug)]
+pub struct LookupItem {
+    pub merchant: String,
+    pub direction: Direction,
+}
+
+#[derive(Clone, Debug)]
+pub struct LookupResult {
+    pub merchant: String,
+    pub category: String,
+}
+
+/// Send the batched prompt to Gemini. Returns one result per input item;
+/// items that fail to classify are returned with category =
+/// `"Uncategorized"` so the caller doesn't have to track gaps.
+pub fn categorize_via_gemini(
+    api_key: &str,
+    model: &str,
+    items: &[LookupItem],
+) -> Result<Vec<LookupResult>, String> {
+    if api_key.is_empty() {
+        return Err("Gemini API key not configured".into());
+    }
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let prompt = build_prompt(items);
+    let body = serde_json::json!({
+        "contents": [
+            { "parts": [ { "text": prompt } ] }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": {
+                "type": "object",
+                "properties": {
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "index": { "type": "integer" },
+                                "category": { "type": "string" }
+                            },
+                            "required": ["index", "category"]
+                        }
+                    }
+                },
+                "required": ["results"]
+            },
+            "temperature": 0.1
+        }
+    });
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        urlencode(model),
+        urlencode(api_key)
+    );
+
+    let response = ureq::post(&url)
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_secs(45))
+        .send_json(body);
+
+    let body_text = match response {
+        Ok(r) => r.into_string().map_err(|e| format!("read body: {e}"))?,
+        Err(ureq::Error::Status(code, resp)) => {
+            let detail = resp.into_string().unwrap_or_default();
+            return Err(format!(
+                "Gemini returned HTTP {code}: {}",
+                detail.chars().take(300).collect::<String>()
+            ));
+        }
+        Err(e) => return Err(format!("Gemini request failed: {e}")),
+    };
+
+    parse_gemini_response(&body_text, items)
+}
+
+fn build_prompt(items: &[LookupItem]) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(1024);
+    out.push_str(
+        "You categorize Indian bank-statement merchants into ONE category from this exact list:\n",
+    );
+    for c in ALLOWED_CATEGORIES {
+        out.push_str("- ");
+        out.push_str(c);
+        out.push('\n');
+    }
+    out.push('\n');
+    out.push_str(
+        "Use the direction (incoming = money in, outgoing = money out) to disambiguate. \
+         For example, 'INDIAN RAILWAY' incoming via NACH/ACH is a Dividend (IRFC shares); \
+         outgoing to 'IRCTC' is Train Travel. \
+         If the merchant is a person's name with no business context, use 'Personal Transfer'. \
+         If you cannot confidently pick, return 'Uncategorized'.\n\n",
+    );
+    out.push_str("Return JSON matching the response schema. Each result's `index` must match the input item's number (1-based).\n\n");
+    out.push_str("Categorize:\n");
+    for (i, item) in items.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{}. {} ({})",
+            i + 1,
+            item.merchant,
+            item.direction.as_str()
+        );
+    }
+    out
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiResponse {
+    candidates: Option<Vec<Candidate>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Candidate {
+    content: Option<CandidateContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CandidateContent {
+    parts: Option<Vec<CandidatePart>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CandidatePart {
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct StructuredOutput {
+    results: Vec<StructuredItem>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct StructuredItem {
+    index: u32,
+    category: String,
+}
+
+fn parse_gemini_response(body: &str, items: &[LookupItem]) -> Result<Vec<LookupResult>, String> {
+    let parsed: GeminiResponse =
+        serde_json::from_str(body).map_err(|e| format!("parse Gemini envelope: {e}"))?;
+    let text = parsed
+        .candidates
+        .and_then(|c| c.into_iter().next())
+        .and_then(|c| c.content)
+        .and_then(|c| c.parts)
+        .and_then(|p| p.into_iter().next())
+        .and_then(|p| p.text)
+        .ok_or_else(|| "Gemini response had no text part".to_string())?;
+
+    let structured: StructuredOutput =
+        serde_json::from_str(&text).map_err(|e| format!("parse structured output: {e}"))?;
+
+    // Map index → category, then build a result per input. Missing items
+    // default to Uncategorized rather than failing the whole batch.
+    let mut by_index = std::collections::HashMap::new();
+    for item in structured.results {
+        if let Some(cat) = sanitize_category(&item.category) {
+            by_index.insert(item.index, cat);
+        }
+    }
+    let out: Vec<LookupResult> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let idx = (i as u32) + 1;
+            let category = by_index
+                .remove(&idx)
+                .unwrap_or_else(|| "Uncategorized".to_string());
+            LookupResult {
+                merchant: item.merchant.clone(),
+                category,
+            }
+        })
+        .collect();
+    Ok(out)
+}
+
+/// Coerce LLM output into a value the rest of the app understands. If the
+/// model returns something outside the allowed list, drop it — we'd rather
+/// leave the row uncategorized than ship a category the picker doesn't show.
+fn sanitize_category(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    for c in ALLOWED_CATEGORIES {
+        if trimmed.eq_ignore_ascii_case(c) {
+            return Some((*c).to_string());
+        }
+    }
+    None
+}
+
+/// Minimal URL component encoder for API key + model name. We deliberately
+/// avoid pulling in a heavy URL crate just for this.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => out.push(c),
+            _ => {
+                let mut buf = [0u8; 4];
+                for b in c.encode_utf8(&mut buf).bytes() {
+                    out.push_str(&format!("%{b:02X}"));
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_includes_all_categories_and_items() {
+        let items = vec![
+            LookupItem {
+                merchant: "SWIGGY INSTAMART".into(),
+                direction: Direction::Debit,
+            },
+            LookupItem {
+                merchant: "INDIAN RAILWAY".into(),
+                direction: Direction::Credit,
+            },
+        ];
+        let p = build_prompt(&items);
+        assert!(p.contains("Groceries"));
+        assert!(p.contains("Dividend"));
+        assert!(p.contains("SWIGGY INSTAMART"));
+        assert!(p.contains("INDIAN RAILWAY"));
+        assert!(p.contains("(outgoing)"));
+        assert!(p.contains("(incoming)"));
+    }
+
+    #[test]
+    fn prompt_does_not_leak_amounts_or_accounts() {
+        let items = vec![LookupItem {
+            merchant: "MERCHANT".into(),
+            direction: Direction::Debit,
+        }];
+        let p = build_prompt(&items);
+        // Random sanity checks that the prompt-building helper would never
+        // include things outside the merchant string.
+        assert!(!p.contains("12345.67"));
+        assert!(!p.contains("XXXXXX"));
+        assert!(!p.contains("/04/26"));
+    }
+
+    #[test]
+    fn parses_well_formed_response() {
+        let items = vec![
+            LookupItem {
+                merchant: "SWIGGY INSTAMART".into(),
+                direction: Direction::Debit,
+            },
+            LookupItem {
+                merchant: "INDIAN RAILWAY".into(),
+                direction: Direction::Credit,
+            },
+        ];
+        let body = r#"{
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "{\"results\":[{\"index\":1,\"category\":\"Groceries\"},{\"index\":2,\"category\":\"Dividend\"}]}"
+                    }]
+                }
+            }]
+        }"#;
+        let r = parse_gemini_response(body, &items).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].category, "Groceries");
+        assert_eq!(r[1].category, "Dividend");
+    }
+
+    #[test]
+    fn parses_partial_response_filling_gaps_with_uncategorized() {
+        let items = vec![
+            LookupItem {
+                merchant: "A".into(),
+                direction: Direction::Debit,
+            },
+            LookupItem {
+                merchant: "B".into(),
+                direction: Direction::Debit,
+            },
+            LookupItem {
+                merchant: "C".into(),
+                direction: Direction::Debit,
+            },
+        ];
+        let body = r#"{
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "{\"results\":[{\"index\":2,\"category\":\"Groceries\"}]}"
+                    }]
+                }
+            }]
+        }"#;
+        let r = parse_gemini_response(body, &items).unwrap();
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[0].category, "Uncategorized");
+        assert_eq!(r[1].category, "Groceries");
+        assert_eq!(r[2].category, "Uncategorized");
+    }
+
+    #[test]
+    fn rejects_off_list_category() {
+        let items = vec![LookupItem {
+            merchant: "X".into(),
+            direction: Direction::Debit,
+        }];
+        let body = r#"{
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "{\"results\":[{\"index\":1,\"category\":\"Cryptocurrency\"}]}"
+                    }]
+                }
+            }]
+        }"#;
+        let r = parse_gemini_response(body, &items).unwrap();
+        // Off-list category dropped → Uncategorized fallback.
+        assert_eq!(r[0].category, "Uncategorized");
+    }
+
+    #[test]
+    fn rejects_missing_text_part() {
+        let items = vec![LookupItem {
+            merchant: "X".into(),
+            direction: Direction::Debit,
+        }];
+        let body = r#"{"candidates":[]}"#;
+        assert!(parse_gemini_response(body, &items).is_err());
+    }
+
+    #[test]
+    fn urlencode_handles_reserved_chars() {
+        assert_eq!(urlencode("abc"), "abc");
+        assert_eq!(urlencode("AIzaSyA_BC"), "AIzaSyA_BC");
+        // Real keys are alphanumeric + `_-`, but be defensive.
+        assert_eq!(urlencode("a b"), "a%20b");
+        assert_eq!(urlencode("a/b"), "a%2Fb");
+    }
+}

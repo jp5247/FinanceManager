@@ -4,13 +4,16 @@ import {
   deleteImport,
   deleteUserRule,
   getImport,
+  getLlmConfig,
   listImports,
   listUserRules,
   recategorizeTransaction,
+  setLlmConfig,
   uploadPdf,
 } from "../ipc";
 import type {
   FileMeta,
+  LlmConfigView,
   NewRuleSpec,
   RawTransaction,
   StoredRule,
@@ -215,6 +218,8 @@ export function UploadView() {
           }
         }}
       />
+
+      <LlmSettingsPanel />
     </section>
   );
 }
@@ -224,6 +229,127 @@ interface ResultProps {
   isFresh: boolean;
   onClose: () => void;
   onRowChanged: (updated: UploadResult) => void;
+}
+
+function LlmSettingsPanel() {
+  const [cfg, setCfg] = useState<LlmConfigView | null>(null);
+  const [draftKey, setDraftKey] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showKey, setShowKey] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setCfg(await getLlmConfig());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (!cfg) {
+    return (
+      <div className="card llm-settings-card">
+        <h3>External categorization</h3>
+        <p className="muted small">Loading…</p>
+      </div>
+    );
+  }
+
+  const persist = async (update: { enabled?: boolean; apiKey?: string }) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await setLlmConfig(update);
+      setCfg(next);
+      if (update.apiKey !== undefined) setDraftKey("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card llm-settings-card">
+      <h3>External categorization (Gemini)</h3>
+      <p className="muted small">
+        For rows that didn't match a user rule or the curated table, the app
+        can ask Google's Gemini API to suggest a category. <strong>Only the
+        extracted merchant name and direction (debit / credit) are sent.</strong>
+        {" "}No amounts, dates, account masks, or ref-IDs. Get a free key at{" "}
+        <span className="mono">aistudio.google.com/apikey</span>.
+      </p>
+
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={cfg.enabled}
+          disabled={saving}
+          onChange={(e) => void persist({ enabled: e.target.checked })}
+        />
+        <span>Enable Gemini lookup on upload</span>
+      </label>
+
+      <div className="llm-key-row">
+        <div className="llm-key-status">
+          <span className="muted xsmall">API KEY</span>{" "}
+          {cfg.apiKeySet ? (
+            <span className="mono">{cfg.apiKeyHint}</span>
+          ) : (
+            <span className="muted">not configured</span>
+          )}
+        </div>
+        <div className="llm-key-controls">
+          <input
+            type={showKey ? "text" : "password"}
+            value={draftKey}
+            onChange={(e) => setDraftKey(e.target.value)}
+            placeholder="AIza..."
+            disabled={saving}
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            className="btn btn-link inline"
+            onClick={() => setShowKey((v) => !v)}
+            disabled={saving}
+          >
+            {showKey ? "Hide" : "Show"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={saving || draftKey.trim().length === 0}
+            onClick={() => void persist({ apiKey: draftKey.trim() })}
+          >
+            Save
+          </button>
+          {cfg.apiKeySet && (
+            <button
+              type="button"
+              className="btn btn-link inline danger"
+              disabled={saving}
+              onClick={() => void persist({ apiKey: "" })}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className="muted xsmall">
+        Model: <span className="mono">{cfg.model}</span> · Free tier covers
+        ~1,500 requests/day. Each upload triggers at most one batched request.
+      </p>
+
+      {error && <div className="error-text">{error}</div>}
+    </div>
+  );
 }
 
 function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps) {
@@ -274,6 +400,17 @@ function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps)
         totalDebit={displayed.totalDebit}
         totalCredit={displayed.totalCredit}
       />
+
+      {(displayed.llmCategorizedCount ?? 0) > 0 && (
+        <div className="llm-result-note">
+          ✨ {displayed.llmCategorizedCount} row
+          {displayed.llmCategorizedCount === 1 ? "" : "s"} categorized via Gemini
+        </div>
+      )}
+
+      {displayed.lookupWarning && (
+        <div className="llm-result-warning">{displayed.lookupWarning}</div>
+      )}
 
       <CategoryBreakdownPanel breakdown={displayed.categoryBreakdown ?? []} />
 

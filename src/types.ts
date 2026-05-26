@@ -89,4 +89,22 @@ export interface UploadResult {
   totalCredit: string;
   categoryBreakdown: CategoryBreakdown[];
   transactions: RawTransaction[];
+  /** Non-fatal note about external categorization. */
+  lookupWarning?: string | null;
+  /** How many rows got their category from the LLM in this run. */
+  llmCategorizedCount?: number;
+}
+
+export interface LlmConfigView {
+  enabled: boolean;
+  model: string;
+  apiKeyHint: string;
+  apiKeySet: boolean;
+}
+
+export interface LlmConfigUpdate {
+  enabled?: boolean;
+  model?: string;
+  /** `""` clears the key, omit to leave untouched, otherwise set it. */
+  apiKey?: string;
 }

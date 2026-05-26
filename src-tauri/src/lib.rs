@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
 mod commands;
+mod llm;
+mod llm_config;
+mod merchant_cache;
 mod state;
 mod upload;
 mod user_rules;
@@ -42,6 +45,8 @@ pub fn run() {
             upload::recategorize_transaction,
             user_rules::list_user_rules,
             user_rules::delete_user_rule,
+            llm_config::get_llm_config,
+            llm_config::set_llm_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

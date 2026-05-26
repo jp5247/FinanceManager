@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateProfileResult,
   FileMeta,
+  LlmConfigUpdate,
+  LlmConfigView,
   NewRuleSpec,
   ProfileSummary,
   StoredRule,
@@ -68,3 +70,9 @@ export const listUserRules = (): Promise<StoredRule[]> =>
 
 export const deleteUserRule = (ruleId: string): Promise<StoredRule[]> =>
   invoke<StoredRule[]>("delete_user_rule", { ruleId });
+
+export const getLlmConfig = (): Promise<LlmConfigView> =>
+  invoke<LlmConfigView>("get_llm_config");
+
+export const setLlmConfig = (update: LlmConfigUpdate): Promise<LlmConfigView> =>
+  invoke<LlmConfigView>("set_llm_config", { update });

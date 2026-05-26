@@ -868,6 +868,67 @@ code {
   color: var(--neon-magenta);
 }
 
+/* --- LLM result notes inside the result panel --- */
+.llm-result-note {
+  margin: 0 0 1rem 0;
+  padding: 0.55rem 0.8rem;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--neon-cyan);
+}
+
+.llm-result-warning {
+  margin: 0 0 1rem 0;
+  padding: 0.55rem 0.8rem;
+  background: rgba(255, 0, 212, 0.05);
+  border: 1px solid rgba(255, 0, 212, 0.25);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--neon-magenta);
+}
+
+/* --- LLM settings panel --- */
+.llm-settings-card h3 {
+  margin: 0 0 0.4rem 0;
+}
+
+.llm-key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.llm-key-status {
+  font-size: 0.9rem;
+}
+
+.llm-key-controls {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.llm-key-controls input {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  outline: none;
+}
+
+.llm-key-controls input:focus {
+  border-color: var(--neon-cyan);
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {
