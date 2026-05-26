@@ -24,6 +24,38 @@ body, html, #root {
   height: 100%;
 }
 
+/* Slim, theme-matched scrollbars. WebView2 / Chromium honours the
+   ::-webkit-scrollbar pseudos; the standard scrollbar-* properties are kept
+   as a Firefox-compatible fallback. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid var(--bg-deep);
+  transition: background 120ms;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-cyan);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .app-shell {
   min-height: 100vh;
   max-width: 1200px;
