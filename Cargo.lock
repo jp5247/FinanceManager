@@ -915,6 +915,7 @@ dependencies = [
  "fm-profile",
  "fm-storage",
  "rand",
+ "rust_decimal",
  "serde",
  "serde_json",
  "tauri",

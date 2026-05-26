@@ -35,6 +35,11 @@ export interface FileMeta {
   adapterVersion: string;
   pageCount: number;
   transactionCount: number;
+  debitCount: number;
+  creditCount: number;
+  /** Decimal string, e.g. "274712.52". */
+  totalDebit: string;
+  totalCredit: string;
 }
 
 export interface UploadResult {
@@ -45,5 +50,9 @@ export interface UploadResult {
   adapterId: string;
   pageCount: number;
   transactionCount: number;
+  debitCount: number;
+  creditCount: number;
+  totalDebit: string;
+  totalCredit: string;
   preview: RawTransaction[];
 }

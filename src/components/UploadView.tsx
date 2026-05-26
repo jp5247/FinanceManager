@@ -143,12 +143,82 @@ function ResultPanel({ result }: ResultProps) {
           </p>
         </div>
       </header>
+
+      <SummaryTiles
+        debitCount={result.debitCount}
+        creditCount={result.creditCount}
+        totalDebit={result.totalDebit}
+        totalCredit={result.totalCredit}
+      />
+
       <TransactionTable rows={result.preview} />
       {result.transactionCount > result.preview.length && (
         <p className="muted small">
           Showing first {result.preview.length} of {result.transactionCount}.
         </p>
       )}
+    </div>
+  );
+}
+
+interface SummaryProps {
+  debitCount: number;
+  creditCount: number;
+  totalDebit: string;
+  totalCredit: string;
+}
+
+const inrFormatter = new Intl.NumberFormat("en-IN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function fmtINR(decimalStr: string): string {
+  const n = Number.parseFloat(decimalStr);
+  if (!Number.isFinite(n)) return decimalStr;
+  return inrFormatter.format(n);
+}
+
+function SummaryTiles({ debitCount, creditCount, totalDebit, totalCredit }: SummaryProps) {
+  const debit = Number.parseFloat(totalDebit) || 0;
+  const credit = Number.parseFloat(totalCredit) || 0;
+  const net = credit - debit;
+  const netSign = net >= 0 ? "+" : "−";
+  const netAbs = fmtINR(Math.abs(net).toFixed(2));
+
+  return (
+    <div className="summary-tiles" role="group" aria-label="Statement summary">
+      <div className="summary-tile tile-debit">
+        <div className="tile-label">Debits</div>
+        <div className="tile-amount">
+          <span className="tile-currency">₹</span>
+          {fmtINR(totalDebit)}
+        </div>
+        <div className="tile-sub muted">
+          {debitCount} {debitCount === 1 ? "transaction" : "transactions"}
+        </div>
+      </div>
+
+      <div className="summary-tile tile-credit">
+        <div className="tile-label">Credits</div>
+        <div className="tile-amount">
+          <span className="tile-currency">₹</span>
+          {fmtINR(totalCredit)}
+        </div>
+        <div className="tile-sub muted">
+          {creditCount} {creditCount === 1 ? "transaction" : "transactions"}
+        </div>
+      </div>
+
+      <div className={`summary-tile tile-net ${net >= 0 ? "net-positive" : "net-negative"}`}>
+        <div className="tile-label">Net flow</div>
+        <div className="tile-amount">
+          {netSign}
+          <span className="tile-currency">₹</span>
+          {netAbs}
+        </div>
+        <div className="tile-sub muted">credit − debit</div>
+      </div>
     </div>
   );
 }
@@ -190,12 +260,22 @@ function PreviousImports({ imports }: { imports: FileMeta[] }) {
       <h3>Previous imports</h3>
       <ul>
         {imports.map((m) => (
-          <li key={m.importId}>
-            <span>{m.sourceFile}</span>
-            <span className="muted small">
-              {m.transactionCount} txns · {m.adapterId}@{m.adapterVersion} ·{" "}
-              {m.uploadedAt}
-            </span>
+          <li key={m.importId} className="previous-row">
+            <div className="prev-main">
+              <div>{m.sourceFile}</div>
+              <div className="muted small">
+                {m.transactionCount} txns · {m.adapterId}@{m.adapterVersion} ·{" "}
+                {m.uploadedAt}
+              </div>
+            </div>
+            <div className="prev-totals">
+              <span className="prev-debit">
+                Dr {m.debitCount} · ₹{fmtINR(m.totalDebit)}
+              </span>
+              <span className="prev-credit">
+                Cr {m.creditCount} · ₹{fmtINR(m.totalCredit)}
+              </span>
+            </div>
           </li>
         ))}
       </ul>

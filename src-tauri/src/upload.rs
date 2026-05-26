@@ -9,6 +9,7 @@ use fm_pdf::PdfExtractor;
 use fm_storage::{StorageRepository, VersionedJson};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::State;
@@ -29,6 +30,22 @@ pub struct FileMeta {
     pub adapter_version: String,
     pub page_count: u32,
     pub transaction_count: u32,
+    // Per-import summary so the UI can show counts/totals without
+    // re-reading the encrypted raw-transactions file. Added with serde
+    // defaults so v1-format imports (without these fields) still load.
+    #[serde(default)]
+    pub debit_count: u32,
+    #[serde(default)]
+    pub credit_count: u32,
+    /// Sum of all debit amounts, as a decimal string (e.g. "274712.52").
+    #[serde(default = "zero_str")]
+    pub total_debit: String,
+    #[serde(default = "zero_str")]
+    pub total_credit: String,
+}
+
+fn zero_str() -> String {
+    "0.00".to_string()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +58,10 @@ pub struct UploadResult {
     pub adapter_id: String,
     pub page_count: u32,
     pub transaction_count: u32,
+    pub debit_count: u32,
+    pub credit_count: u32,
+    pub total_debit: String,
+    pub total_credit: String,
     /// Up to the first 50 parsed rows so the UI can render a preview without
     /// re-reading the encrypted file.
     pub preview: Vec<RawTransaction>,
@@ -75,6 +96,8 @@ pub fn upload_pdf(
         .parse(&extracted, &import_id)
         .map_err(|e| e.to_string())?;
 
+    let summary = summarise(&rows);
+
     let now = now_rfc3339();
     let meta = FileMeta {
         import_id: import_id.clone(),
@@ -85,6 +108,10 @@ pub fn upload_pdf(
         adapter_version: adapter.version().to_string(),
         page_count: extracted.pages.len() as u32,
         transaction_count: rows.len() as u32,
+        debit_count: summary.debit_count,
+        credit_count: summary.credit_count,
+        total_debit: format!("{:.2}", summary.total_debit),
+        total_credit: format!("{:.2}", summary.total_credit),
     };
 
     write_encrypted_json(
@@ -112,8 +139,39 @@ pub fn upload_pdf(
         adapter_id: adapter.id().to_string(),
         page_count: extracted.pages.len() as u32,
         transaction_count: rows.len() as u32,
+        debit_count: summary.debit_count,
+        credit_count: summary.credit_count,
+        total_debit: format!("{:.2}", summary.total_debit),
+        total_credit: format!("{:.2}", summary.total_credit),
         preview,
     })
+}
+
+struct Summary {
+    debit_count: u32,
+    credit_count: u32,
+    total_debit: Decimal,
+    total_credit: Decimal,
+}
+
+fn summarise(rows: &[RawTransaction]) -> Summary {
+    let mut s = Summary {
+        debit_count: 0,
+        credit_count: 0,
+        total_debit: Decimal::ZERO,
+        total_credit: Decimal::ZERO,
+    };
+    for r in rows {
+        if let Some(d) = &r.debit {
+            s.debit_count += 1;
+            s.total_debit += d.as_decimal();
+        }
+        if let Some(c) = &r.credit {
+            s.credit_count += 1;
+            s.total_credit += c.as_decimal();
+        }
+    }
+    s
 }
 
 /// Walk the user's `source/uploads/` tree and return one [`FileMeta`] per
