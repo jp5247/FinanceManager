@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust (fmt + clippy + test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --no-fail-fast
+
+  guard-pdfs:
+    name: Block PDFs from being committed (PII guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail if any tracked file is a PDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_pdfs=$(git ls-files '*.pdf' '*.PDF' || true)
+          if [ -n "$tracked_pdfs" ]; then
+            echo "::error::PDFs must not be committed (they contain PII). Found:"
+            echo "$tracked_pdfs"
+            exit 1
+          fi
+          echo "No tracked PDFs. OK."
