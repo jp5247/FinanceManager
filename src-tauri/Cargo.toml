@@ -24,3 +24,4 @@ fm-storage = { path = "../crates/fm-storage" }
 fm-crypto = { path = "../crates/fm-crypto" }
 fm-audit = { path = "../crates/fm-audit" }
 fm-parser = { path = "../crates/fm-parser" }
+fm-profile = { path = "../crates/fm-profile" }

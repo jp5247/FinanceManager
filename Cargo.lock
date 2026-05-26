@@ -871,6 +871,7 @@ dependencies = [
  "fm-core",
  "fm-crypto",
  "fm-parser",
+ "fm-profile",
  "fm-storage",
  "serde",
  "serde_json",
