@@ -21,6 +21,19 @@ if (Test-Path $cargoBin) {
     Write-Warning "Rust not found at $cargoBin. Run 'winget install Rustlang.Rustup' first."
 }
 
+# 1b. Make pdfium.dll discoverable when the app runs from `tauri dev`.
+# Production builds will bundle pdfium.dll next to the installed exe; for
+# dev we add the bblanchon distribution dir to PATH instead.
+$pdfiumDir = Join-Path $PSScriptRoot '..\pdfium-win-x64\bin'
+$pdfiumDir = [System.IO.Path]::GetFullPath($pdfiumDir)
+if (Test-Path (Join-Path $pdfiumDir 'pdfium.dll')) {
+    if ($env:PATH -notlike "*$pdfiumDir*") {
+        $env:PATH = "$pdfiumDir;$env:PATH"
+    }
+} else {
+    Write-Warning "pdfium.dll not found at $pdfiumDir. PDF uploads will fail until you extract pdfium-windows-x64.tgz there."
+}
+
 # 2. Source MSVC env (link.exe + Windows SDK lib/include paths).
 # Required because our VS BuildTools install has a broken COM registration,
 # so cargo's auto-detection can't find MSVC without help.
@@ -53,7 +66,9 @@ if (-not (Test-Path $vcvars)) {
 $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 $link  = (Get-Command link.exe -ErrorAction SilentlyContinue).Source
 $npm   = (Get-Command npm -ErrorAction SilentlyContinue).Source
+$pdfium = Get-ChildItem -ErrorAction SilentlyContinue (Join-Path $pdfiumDir 'pdfium.dll') | Select-Object -ExpandProperty FullName
 Write-Host ''
-Write-Host "cargo:    $cargo"
-Write-Host "link.exe: $link"
-Write-Host "npm:      $npm"
+Write-Host "cargo:      $cargo"
+Write-Host "link.exe:   $link"
+Write-Host "npm:        $npm"
+Write-Host "pdfium.dll: $pdfium"

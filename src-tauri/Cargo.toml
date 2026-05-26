@@ -17,11 +17,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
+time = { version = "0.3", features = ["formatting", "macros"] }
+rand = "0.8"
 fm-core = { path = "../crates/fm-core" }
 fm-storage = { path = "../crates/fm-storage" }
 fm-crypto = { path = "../crates/fm-crypto" }
 fm-audit = { path = "../crates/fm-audit" }
 fm-parser = { path = "../crates/fm-parser" }
+fm-pdf = { path = "../crates/fm-pdf" }
 fm-profile = { path = "../crates/fm-profile" }

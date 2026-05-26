@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CreateProfileResult, ProfileSummary } from "./types";
+import type {
+  CreateProfileResult,
+  FileMeta,
+  ProfileSummary,
+  UploadResult,
+} from "./types";
 
 export const listProfiles = (): Promise<ProfileSummary[]> =>
   invoke<ProfileSummary[]>("list_profiles");
@@ -27,3 +32,12 @@ export const lockProfile = (): Promise<void> => invoke<void>("lock_profile");
 
 export const currentProfile = (): Promise<ProfileSummary | null> =>
   invoke<ProfileSummary | null>("current_profile");
+
+export const uploadPdf = (
+  filePath: string,
+  password: string | null,
+): Promise<UploadResult> =>
+  invoke<UploadResult>("upload_pdf", { filePath, password });
+
+export const listImports = (): Promise<FileMeta[]> =>
+  invoke<FileMeta[]>("list_imports");

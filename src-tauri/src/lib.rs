@@ -2,6 +2,7 @@
 
 mod commands;
 mod state;
+mod upload;
 
 use state::AppState;
 use std::path::PathBuf;
@@ -10,6 +11,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Data root: env override for dev, else <app_local_data_dir>/data.
             let data_path = match std::env::var("FM_DATA_ROOT") {
@@ -32,6 +34,8 @@ pub fn run() {
             commands::unlock_with_recovery,
             commands::lock_profile,
             commands::current_profile,
+            upload::upload_pdf,
+            upload::list_imports,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
