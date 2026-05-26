@@ -54,5 +54,5 @@ export interface UploadResult {
   creditCount: number;
   totalDebit: string;
   totalCredit: string;
-  preview: RawTransaction[];
+  transactions: RawTransaction[];
 }

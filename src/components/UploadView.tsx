@@ -1,17 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { listImports, uploadPdf } from "../ipc";
-import type { FileMeta, UploadResult } from "../types";
+import {
+  deleteImport,
+  getImport,
+  listImports,
+  uploadPdf,
+} from "../ipc";
+import type { FileMeta, RawTransaction, UploadResult } from "../types";
 
 type Stage =
   | { kind: "idle" }
   | { kind: "needsPassword"; filePath: string }
   | { kind: "uploading" }
-  | { kind: "done"; result: UploadResult };
+  | { kind: "viewing"; displayed: UploadResult; isFresh: boolean };
 
 function fileNameOf(p: string): string {
   const i = Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/"));
   return i >= 0 ? p.slice(i + 1) : p;
+}
+
+const inrFormatter = new Intl.NumberFormat("en-IN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function fmtINR(decimalStr: string): string {
+  const n = Number.parseFloat(decimalStr);
+  if (!Number.isFinite(n)) return decimalStr;
+  return inrFormatter.format(n);
 }
 
 export function UploadView() {
@@ -48,18 +64,47 @@ export function UploadView() {
     setError(null);
     try {
       const result = await uploadPdf(filePath, pw);
-      setStage({ kind: "done", result });
+      setStage({ kind: "viewing", displayed: result, isFresh: true });
       setPassword("");
       void refreshImports();
     } catch (e) {
       const msg = String(e);
-      if (msg.toLowerCase().includes("password")) {
+      if (msg.toLowerCase().includes("password is incorrect") ||
+          msg.toLowerCase().includes("password-protected")) {
         setStage({ kind: "needsPassword", filePath });
         setError(msg);
       } else {
         setStage({ kind: "idle" });
         setError(msg);
       }
+    }
+  };
+
+  const openImport = async (importId: string) => {
+    setError(null);
+    try {
+      const result = await getImport(importId);
+      setStage({ kind: "viewing", displayed: result, isFresh: false });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const removeImport = async (importId: string) => {
+    const ok = window.confirm(
+      `Delete this import? Transactions parsed from it will be removed. The original PDF on your computer is not touched.`,
+    );
+    if (!ok) return;
+    setError(null);
+    try {
+      await deleteImport(importId);
+      // If we were viewing the one we just deleted, drop the view.
+      if (stage.kind === "viewing" && stage.displayed.importId === importId) {
+        setStage({ kind: "idle" });
+      }
+      void refreshImports();
+    } catch (e) {
+      setError(String(e));
     }
   };
 
@@ -119,44 +164,56 @@ export function UploadView() {
         {error && <div className="error-text">{error}</div>}
       </div>
 
-      {stage.kind === "done" && <ResultPanel result={stage.result} />}
+      {stage.kind === "viewing" && (
+        <ResultPanel
+          displayed={stage.displayed}
+          isFresh={stage.isFresh}
+          onClose={() => setStage({ kind: "idle" })}
+        />
+      )}
 
-      <PreviousImports imports={imports} />
+      <PreviousImports
+        imports={imports}
+        activeImportId={stage.kind === "viewing" ? stage.displayed.importId : null}
+        onOpen={openImport}
+        onDelete={removeImport}
+      />
     </section>
   );
 }
 
 interface ResultProps {
-  result: UploadResult;
+  displayed: UploadResult;
+  isFresh: boolean;
+  onClose: () => void;
 }
 
-function ResultPanel({ result }: ResultProps) {
+function ResultPanel({ displayed, isFresh, onClose }: ResultProps) {
   return (
     <div className="card result-panel">
       <header className="result-header">
         <div>
-          <h3>{result.sourceFile}</h3>
+          <h3>{displayed.sourceFile}</h3>
           <p className="muted small">
-            {result.transactionCount} transactions · {result.pageCount} pages ·
-            adapter <code>{result.adapterId}</code> · import{" "}
-            <code>{result.importId}</code>
+            {isFresh ? "Just uploaded · " : "Viewing import · "}
+            {displayed.transactionCount} transactions · {displayed.pageCount} pages
+            · adapter <code>{displayed.adapterId}</code> · import{" "}
+            <code>{displayed.importId}</code>
           </p>
         </div>
+        <button className="btn btn-link inline" onClick={onClose}>
+          Close
+        </button>
       </header>
 
       <SummaryTiles
-        debitCount={result.debitCount}
-        creditCount={result.creditCount}
-        totalDebit={result.totalDebit}
-        totalCredit={result.totalCredit}
+        debitCount={displayed.debitCount}
+        creditCount={displayed.creditCount}
+        totalDebit={displayed.totalDebit}
+        totalCredit={displayed.totalCredit}
       />
 
-      <TransactionTable rows={result.preview} />
-      {result.transactionCount > result.preview.length && (
-        <p className="muted small">
-          Showing first {result.preview.length} of {result.transactionCount}.
-        </p>
-      )}
+      <TransactionTable rows={displayed.transactions} />
     </div>
   );
 }
@@ -166,17 +223,6 @@ interface SummaryProps {
   creditCount: number;
   totalDebit: string;
   totalCredit: string;
-}
-
-const inrFormatter = new Intl.NumberFormat("en-IN", {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-function fmtINR(decimalStr: string): string {
-  const n = Number.parseFloat(decimalStr);
-  if (!Number.isFinite(n)) return decimalStr;
-  return inrFormatter.format(n);
 }
 
 function SummaryTiles({ debitCount, creditCount, totalDebit, totalCredit }: SummaryProps) {
@@ -223,7 +269,7 @@ function SummaryTiles({ debitCount, creditCount, totalDebit, totalCredit }: Summ
   );
 }
 
-function TransactionTable({ rows }: { rows: UploadResult["preview"] }) {
+function TransactionTable({ rows }: { rows: RawTransaction[] }) {
   if (rows.length === 0) {
     return <p className="muted">No transactions parsed.</p>;
   }
@@ -243,8 +289,8 @@ function TransactionTable({ rows }: { rows: UploadResult["preview"] }) {
             <tr key={`${r.importId}-${r.rowNumber}`}>
               <td className="mono">{r.txnDate}</td>
               <td>{r.description}</td>
-              <td className="num">{r.debit ?? ""}</td>
-              <td className="num credit">{r.credit ?? ""}</td>
+              <td className="num">{r.debit ? fmtINR(r.debit) : ""}</td>
+              <td className="num credit">{r.credit ? fmtINR(r.credit) : ""}</td>
             </tr>
           ))}
         </tbody>
@@ -253,31 +299,57 @@ function TransactionTable({ rows }: { rows: UploadResult["preview"] }) {
   );
 }
 
-function PreviousImports({ imports }: { imports: FileMeta[] }) {
+interface PrevProps {
+  imports: FileMeta[];
+  activeImportId: string | null;
+  onOpen: (importId: string) => void;
+  onDelete: (importId: string) => void;
+}
+
+function PreviousImports({ imports, activeImportId, onOpen, onDelete }: PrevProps) {
   if (imports.length === 0) return null;
   return (
     <div className="card previous-imports">
       <h3>Previous imports</h3>
+      <p className="muted small">Click a row to view its transactions.</p>
       <ul>
-        {imports.map((m) => (
-          <li key={m.importId} className="previous-row">
-            <div className="prev-main">
-              <div>{m.sourceFile}</div>
-              <div className="muted small">
-                {m.transactionCount} txns · {m.adapterId}@{m.adapterVersion} ·{" "}
-                {m.uploadedAt}
-              </div>
-            </div>
-            <div className="prev-totals">
-              <span className="prev-debit">
-                Dr {m.debitCount} · ₹{fmtINR(m.totalDebit)}
-              </span>
-              <span className="prev-credit">
-                Cr {m.creditCount} · ₹{fmtINR(m.totalCredit)}
-              </span>
-            </div>
-          </li>
-        ))}
+        {imports.map((m) => {
+          const isActive = activeImportId === m.importId;
+          return (
+            <li key={m.importId} className={`previous-row ${isActive ? "active" : ""}`}>
+              <button
+                type="button"
+                className="prev-main-button"
+                onClick={() => onOpen(m.importId)}
+              >
+                <div className="prev-main">
+                  <div className="prev-file">{m.sourceFile}</div>
+                  <div className="muted small">
+                    {m.transactionCount} txns · {m.adapterId}@{m.adapterVersion} ·{" "}
+                    {m.uploadedAt}
+                  </div>
+                </div>
+                <div className="prev-totals">
+                  <span className="prev-debit">
+                    Dr {m.debitCount} · ₹{fmtINR(m.totalDebit)}
+                  </span>
+                  <span className="prev-credit">
+                    Cr {m.creditCount} · ₹{fmtINR(m.totalCredit)}
+                  </span>
+                </div>
+              </button>
+              <button
+                type="button"
+                className="prev-delete"
+                aria-label={`Delete import of ${m.sourceFile}`}
+                title="Delete this import"
+                onClick={() => onDelete(m.importId)}
+              >
+                ×
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

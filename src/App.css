@@ -512,16 +512,42 @@ code {
 
 .previous-imports li {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.45rem 0.6rem;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 120ms;
 }
 
-.previous-imports .previous-row {
+.previous-imports li:hover {
+  border-color: var(--border-strong);
+}
+
+.previous-imports li.active {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.25);
+}
+
+.prev-main-button {
+  flex: 1;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.prev-main-button:hover .prev-file {
+  color: var(--neon-cyan);
 }
 
 .prev-main {
@@ -529,6 +555,10 @@ code {
   flex-direction: column;
   gap: 0.1rem;
   min-width: 0;
+}
+
+.prev-file {
+  transition: color 120ms;
 }
 
 .prev-totals {
@@ -545,6 +575,28 @@ code {
 
 .prev-credit {
   color: var(--neon-cyan);
+}
+
+.prev-delete {
+  width: 36px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms, background 120ms;
+}
+
+.prev-delete:hover {
+  color: var(--danger);
+  background: rgba(255, 85, 119, 0.08);
+}
+
+/* Result panel header: title on the left, close button on the right */
+.result-header {
+  align-items: center;
 }
 
 /* --- Summary tiles above the transaction table --- */

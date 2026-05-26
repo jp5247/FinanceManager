@@ -36,6 +36,8 @@ pub fn run() {
             commands::current_profile,
             upload::upload_pdf,
             upload::list_imports,
+            upload::get_import,
+            upload::delete_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

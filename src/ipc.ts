@@ -41,3 +41,9 @@ export const uploadPdf = (
 
 export const listImports = (): Promise<FileMeta[]> =>
   invoke<FileMeta[]>("list_imports");
+
+export const getImport = (importId: string): Promise<UploadResult> =>
+  invoke<UploadResult>("get_import", { importId });
+
+export const deleteImport = (importId: string): Promise<void> =>
+  invoke<void>("delete_import", { importId });
