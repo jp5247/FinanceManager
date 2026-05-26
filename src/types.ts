@@ -39,6 +39,24 @@ export interface CategoryBreakdown {
   totalCredit: string;
 }
 
+export type StoredMatchType = "contains" | "regex";
+
+export interface StoredRule {
+  id: string;
+  priority: number;
+  matchType: StoredMatchType;
+  matchValue: string;
+  category: string;
+  confidence: number;
+  createdAt: string;
+}
+
+export interface NewRuleSpec {
+  matchType: StoredMatchType;
+  matchValue: string;
+  category: string;
+}
+
 export interface FileMeta {
   importId: string;
   uploadedAt: string;

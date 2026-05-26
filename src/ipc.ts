@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateProfileResult,
   FileMeta,
+  NewRuleSpec,
   ProfileSummary,
+  StoredRule,
   UploadResult,
 } from "./types";
 
@@ -52,9 +54,17 @@ export const recategorizeTransaction = (
   importId: string,
   rowNumber: number,
   category: string,
+  saveAsRule: NewRuleSpec | null = null,
 ): Promise<UploadResult> =>
   invoke<UploadResult>("recategorize_transaction", {
     importId,
     rowNumber,
     category,
+    saveAsRule,
   });
+
+export const listUserRules = (): Promise<StoredRule[]> =>
+  invoke<StoredRule[]>("list_user_rules");
+
+export const deleteUserRule = (ruleId: string): Promise<StoredRule[]> =>
+  invoke<StoredRule[]>("delete_user_rule", { ruleId });

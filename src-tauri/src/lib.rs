@@ -3,6 +3,7 @@
 mod commands;
 mod state;
 mod upload;
+mod user_rules;
 
 use state::AppState;
 use std::path::PathBuf;
@@ -39,6 +40,8 @@ pub fn run() {
             upload::get_import,
             upload::delete_import,
             upload::recategorize_transaction,
+            user_rules::list_user_rules,
+            user_rules::delete_user_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

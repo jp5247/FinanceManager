@@ -12,11 +12,13 @@ pub enum MatchType {
     Regex(Regex),
 }
 
-/// One categorization rule.
+/// One categorization rule. Owned strings throughout so both compile-time
+/// built-ins and runtime user-supplied rules use the same type.
 pub struct Rule {
-    /// Stable identifier, e.g. `"food/swiggy"`. Recorded on every
-    /// categorized transaction so audit / debug can trace which rule fired.
-    pub id: &'static str,
+    /// Stable identifier, e.g. `"curated:swiggy"` or `"user:abc123"`.
+    /// Recorded on every categorized transaction so audit / debug can trace
+    /// which rule fired.
+    pub id: String,
 
     /// Higher value = tried first. Tie-break by insertion order.
     pub priority: i32,
@@ -24,39 +26,44 @@ pub struct Rule {
     pub matcher: MatchType,
 
     /// Category label shown to the user, e.g. `"Food Delivery"`.
-    pub category: &'static str,
+    pub category: String,
 
     /// 0.0..=1.0 — how confident this rule is in its classification.
-    /// Used later for the "flag low-confidence rows" review queue.
     pub confidence: f32,
 }
 
 /// Convenience constructor for a case-insensitive `Contains` rule with
 /// confidence 0.9.
 pub fn contains_rule(
-    id: &'static str,
+    id: impl Into<String>,
     priority: i32,
-    needle: &str,
-    category: &'static str,
+    needle: impl Into<String>,
+    category: impl Into<String>,
 ) -> Rule {
     Rule {
-        id,
+        id: id.into(),
         priority,
-        matcher: MatchType::Contains(needle.to_string()),
-        category,
+        matcher: MatchType::Contains(needle.into()),
+        category: category.into(),
         confidence: 0.9,
     }
 }
 
 /// Convenience constructor for a regex rule with confidence 0.9.
 /// Panics if `pattern` is not a valid regex — intended for static patterns
-/// embedded at compile time.
-pub fn regex_rule(id: &'static str, priority: i32, pattern: &str, category: &'static str) -> Rule {
+/// embedded at compile time. For user-supplied patterns use
+/// [`crate::StoredRule::to_runtime`] which returns a Result.
+pub fn regex_rule(
+    id: impl Into<String>,
+    priority: i32,
+    pattern: &str,
+    category: impl Into<String>,
+) -> Rule {
     Rule {
-        id,
+        id: id.into(),
         priority,
         matcher: MatchType::Regex(Regex::new(pattern).expect("invalid built-in regex")),
-        category,
+        category: category.into(),
         confidence: 0.9,
     }
 }
@@ -72,8 +79,7 @@ impl RuleSet {
         Self { rules }
     }
 
-    /// Append more rules; re-sorts by priority. Use this to merge built-in
-    /// rules with user-supplied ones.
+    /// Append more rules; re-sorts by priority.
     pub fn with(mut self, more: impl IntoIterator<Item = Rule>) -> Self {
         self.rules.extend(more);
         self.rules.sort_by_key(|r| std::cmp::Reverse(r.priority));

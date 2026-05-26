@@ -1,20 +1,31 @@
 //! Transaction categorization for FinanceManager.
 //!
-//! A small rule engine that maps free-text transaction descriptions to
-//! categories like `Salary`, `Food Delivery`, `Rent`, `Cab/Ride`, etc.
+//! ## Pipeline order
 //!
-//! Rules are tried in **priority order** (highest first); the first match
-//! wins. The built-in rule set [`default_rules`] ships ~35 patterns covering
-//! the most common Indian-banking transaction shapes. User-supplied rules
-//! can be appended later (Phase-2 work) — the [`RuleSet::with`] helper is
-//! designed for that.
+//! Categorization at upload time follows this order:
+//!
+//! 1. **User-saved rules** (priority [`USER_RULE_PRIORITY`], 1000) —
+//!    persisted per-profile via [`StoredRule`].
+//! 2. **Curated merchant table** (priority [`CURATED_PRIORITY`], 500) —
+//!    [`curated_merchants`] ships with the app; only unambiguous brand
+//!    substrings.
+//! 3. **Internet merchant lookup** — not yet implemented; will plug in
+//!    here.
+//! 4. **Uncategorized** — manual recategorization via the UI.
+//!
+//! [`build_rules`] composes the user rules + curated table into a single
+//! [`RuleSet`] for one call to [`categorize`].
 
 #![forbid(unsafe_code)]
 
 mod builtin;
 mod engine;
 mod rule;
+mod stored;
 
-pub use builtin::default_rules;
+pub use builtin::{
+    build_rules, curated_merchants, default_rules, CURATED_PRIORITY, USER_RULE_PRIORITY,
+};
 pub use engine::{categorize, CategoryHit};
 pub use rule::{contains_rule, regex_rule, MatchType, Rule, RuleSet, UNCATEGORIZED};
+pub use stored::{compile_stored, StoredMatchType, StoredRule, StoredRuleError};

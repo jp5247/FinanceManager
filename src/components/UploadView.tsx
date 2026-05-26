@@ -2,12 +2,20 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   deleteImport,
+  deleteUserRule,
   getImport,
   listImports,
+  listUserRules,
   recategorizeTransaction,
   uploadPdf,
 } from "../ipc";
-import type { FileMeta, RawTransaction, UploadResult } from "../types";
+import type {
+  FileMeta,
+  NewRuleSpec,
+  RawTransaction,
+  StoredRule,
+  UploadResult,
+} from "../types";
 import { COMMON_CATEGORIES, UNCATEGORIZED } from "../categories";
 
 type Stage =
@@ -37,6 +45,7 @@ export function UploadView() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [imports, setImports] = useState<FileMeta[]>([]);
+  const [userRules, setUserRules] = useState<StoredRule[]>([]);
 
   const refreshImports = useCallback(async () => {
     try {
@@ -46,9 +55,18 @@ export function UploadView() {
     }
   }, []);
 
+  const refreshUserRules = useCallback(async () => {
+    try {
+      setUserRules(await listUserRules());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   useEffect(() => {
     void refreshImports();
-  }, [refreshImports]);
+    void refreshUserRules();
+  }, [refreshImports, refreshUserRules]);
 
   const pickFile = async () => {
     setError(null);
@@ -174,6 +192,7 @@ export function UploadView() {
           onRowChanged={(updated) => {
             setStage({ kind: "viewing", displayed: updated, isFresh: false });
             void refreshImports();
+            void refreshUserRules();
           }}
         />
       )}
@@ -183,6 +202,18 @@ export function UploadView() {
         activeImportId={stage.kind === "viewing" ? stage.displayed.importId : null}
         onOpen={openImport}
         onDelete={removeImport}
+      />
+
+      <UserRulesPanel
+        rules={userRules}
+        onDelete={async (id) => {
+          try {
+            const updated = await deleteUserRule(id);
+            setUserRules(updated);
+          } catch (e) {
+            setError(String(e));
+          }
+        }}
       />
     </section>
   );
@@ -198,18 +229,23 @@ interface ResultProps {
 function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps) {
   const [editing, setEditing] = useState<{ row: RawTransaction } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const submit = async (newCategory: string) => {
+  const submit = async (newCategory: string, saveAsRule: NewRuleSpec | null) => {
     if (!editing) return;
     setSaving(true);
+    setError(null);
     try {
       const updated = await recategorizeTransaction(
         displayed.importId,
         editing.row.rowNumber,
         newCategory,
+        saveAsRule,
       );
       onRowChanged(updated);
       setEditing(null);
+    } catch (e) {
+      setError(String(e));
     } finally {
       setSaving(false);
     }
@@ -247,8 +283,12 @@ function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps)
         <RecategorizeModal
           row={editing.row}
           saving={saving}
+          error={error}
           onSave={submit}
-          onCancel={() => setEditing(null)}
+          onCancel={() => {
+            setEditing(null);
+            setError(null);
+          }}
         />
       )}
     </div>
@@ -422,24 +462,54 @@ function TransactionTable({ rows, onEditCategory }: TableProps) {
 interface RecategorizeProps {
   row: RawTransaction;
   saving: boolean;
-  onSave: (newCategory: string) => void;
+  error: string | null;
+  onSave: (newCategory: string, saveAsRule: NewRuleSpec | null) => void;
   onCancel: () => void;
 }
 
 const OTHER = "Other…";
 
-function RecategorizeModal({ row, saving, onSave, onCancel }: RecategorizeProps) {
+/** Pull a "good guess" pattern out of the description for the save-as-rule
+ * pattern input. We just take the first 30 chars stripped of leading common
+ * prefixes — the user edits before saving. */
+function suggestPattern(description: string): string {
+  let s = description.trim();
+  for (const prefix of ["UPI-", "UPI/", "ACH D- ", "ACH CR- ", "NEFT CR-"]) {
+    if (s.toUpperCase().startsWith(prefix)) {
+      s = s.slice(prefix.length);
+      break;
+    }
+  }
+  // Take the first chunk up to a separator we commonly see.
+  const stop = s.search(/[/0-9]/);
+  if (stop > 0 && stop < 30) s = s.slice(0, stop);
+  return s.trim().slice(0, 30);
+}
+
+function RecategorizeModal({
+  row,
+  saving,
+  error,
+  onSave,
+  onCancel,
+}: RecategorizeProps) {
   const current = row.category ?? "";
   const isCustom = current && !COMMON_CATEGORIES.includes(current);
   const [selection, setSelection] = useState<string>(
     isCustom ? OTHER : current || COMMON_CATEGORIES[0],
   );
   const [customText, setCustomText] = useState<string>(isCustom ? current : "");
+  const [saveAsRule, setSaveAsRule] = useState<boolean>(false);
+  const [pattern, setPattern] = useState<string>(suggestPattern(row.description));
 
+  const finalCategory = selection === OTHER ? customText.trim() : selection;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const finalCategory = selection === OTHER ? customText.trim() : selection;
-    onSave(finalCategory);
+    const rule: NewRuleSpec | null =
+      saveAsRule && pattern.trim().length > 0
+        ? { matchType: "contains", matchValue: pattern.trim(), category: finalCategory }
+        : null;
+    onSave(finalCategory, rule);
   };
 
   return (
@@ -484,12 +554,40 @@ function RecategorizeModal({ row, saving, onSave, onCancel }: RecategorizeProps)
           </label>
         )}
 
+        <label className="check-row save-rule-toggle">
+          <input
+            type="checkbox"
+            checked={saveAsRule}
+            onChange={(e) => setSaveAsRule(e.target.checked)}
+            disabled={saving}
+          />
+          <span>Save as a rule — future transactions matching this pattern will auto-categorize</span>
+        </label>
+
+        {saveAsRule && (
+          <label>
+            <span>Match transactions whose description contains</span>
+            <input
+              type="text"
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              disabled={saving}
+              placeholder="e.g. SWIGGY INSTAMART"
+            />
+            <small className="muted">
+              Case-insensitive substring match. Edit to make it more or less specific.
+            </small>
+          </label>
+        )}
+
+        {error && <div className="error-text">{error}</div>}
+
         <div className="row">
           {row.category && (
             <button
               type="button"
               className="btn btn-link inline danger"
-              onClick={() => onSave("")}
+              onClick={() => onSave("", null)}
               disabled={saving}
               title="Mark this row as Uncategorized"
             >
@@ -509,13 +607,72 @@ function RecategorizeModal({ row, saving, onSave, onCancel }: RecategorizeProps)
             type="submit"
             className="btn btn-primary"
             disabled={
-              saving || (selection === OTHER && customText.trim().length === 0)
+              saving ||
+              (selection === OTHER && customText.trim().length === 0) ||
+              (saveAsRule && pattern.trim().length === 0)
             }
           >
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+interface UserRulesPanelProps {
+  rules: StoredRule[];
+  onDelete: (id: string) => Promise<void>;
+}
+
+function UserRulesPanel({ rules, onDelete }: UserRulesPanelProps) {
+  if (rules.length === 0) {
+    return (
+      <div className="card user-rules-card">
+        <h3>Your category rules</h3>
+        <p className="muted small">
+          No saved rules yet. When you recategorize a transaction, tick
+          "Save as a rule" to make the same category apply automatically to
+          future matching transactions.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="card user-rules-card">
+      <h3>Your category rules ({rules.length})</h3>
+      <p className="muted small">
+        Applied on every upload, before the built-in merchant table. Future
+        statements with matching descriptions categorize automatically.
+      </p>
+      <ul className="rule-list">
+        {rules.map((r) => (
+          <li key={r.id} className="rule-row">
+            <div className="rule-main">
+              <div className="rule-pattern">
+                <span className="muted xsmall">
+                  {r.matchType === "regex" ? "regex" : "contains"}
+                </span>{" "}
+                <code>{r.matchValue}</code>{" "}
+                <span className="muted">→</span>{" "}
+                <span className="category-chip">{r.category}</span>
+              </div>
+              <div className="muted xsmall">
+                created {r.createdAt}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="prev-delete"
+              title="Delete this rule"
+              aria-label={`Delete rule matching ${r.matchValue}`}
+              onClick={() => void onDelete(r.id)}
+            >
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

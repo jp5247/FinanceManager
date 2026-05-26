@@ -3,7 +3,8 @@
 //! detail / delete operations the Upload UI uses for past imports.
 
 use crate::state::AppState;
-use fm_categorize::{categorize, default_rules, RuleSet, UNCATEGORIZED};
+use crate::user_rules::{append_rule, load_rules, NewRuleSpec};
+use fm_categorize::{build_rules, categorize, compile_stored, RuleSet, UNCATEGORIZED};
 use fm_core::UserId;
 use fm_crypto::{open, seal, KeyBytes};
 use fm_parser::{default_adapters, detect_adapter, RawTransaction};
@@ -111,8 +112,9 @@ pub fn upload_pdf(
         .parse(&extracted, &import_id)
         .map_err(|e| e.to_string())?;
 
-    // Categorize each row before persistence.
-    let rules = default_rules();
+    // Categorize: user rules first (overrides curated), then curated.
+    let user_rules = compile_stored(&load_rules(&state, &user, &dek)?.rules);
+    let rules = build_rules(user_rules);
     apply_categories(&mut rows, &rules);
 
     let summary = summarise(&rows);
@@ -193,11 +195,16 @@ pub fn get_import(import_id: String, state: State<AppState>) -> Result<UploadRes
 ///
 /// Pass an empty `category` to clear the assignment and mark the row
 /// uncategorized again.
+///
+/// If `save_as_rule` is provided, a new user rule is appended to the
+/// per-profile rules file. The new rule applies to FUTURE uploads — it does
+/// not retroactively recategorize other rows in this or prior imports.
 #[tauri::command]
 pub fn recategorize_transaction(
     import_id: String,
     row_number: u32,
     category: String,
+    save_as_rule: Option<NewRuleSpec>,
     state: State<AppState>,
 ) -> Result<UploadResult, String> {
     let (user, dek) = session(&state)?;
@@ -229,6 +236,22 @@ pub fn recategorize_transaction(
     } else {
         row.category = Some(trimmed.to_string());
         row.category_rule_id = Some("manual".to_string());
+    }
+
+    // Optionally persist a user rule for future matches.
+    if let Some(spec) = save_as_rule {
+        // The new rule's category should match what the user just assigned —
+        // either fall back to the explicit category if the spec disagrees.
+        let spec = NewRuleSpec {
+            match_type: spec.match_type,
+            match_value: spec.match_value,
+            category: if spec.category.trim().is_empty() {
+                trimmed.to_string()
+            } else {
+                spec.category
+            },
+        };
+        append_rule(&state, &user, &dek, spec)?;
     }
 
     let breakdown = build_category_breakdown(&rows);
@@ -271,7 +294,7 @@ pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), St
     Ok(())
 }
 
-fn session(state: &State<AppState>) -> Result<(UserId, KeyBytes), String> {
+pub(crate) fn session(state: &State<AppState>) -> Result<(UserId, KeyBytes), String> {
     let guard = state.session.lock().map_err(|e| e.to_string())?;
     let s = guard
         .as_ref()

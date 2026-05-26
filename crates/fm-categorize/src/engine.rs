@@ -3,7 +3,7 @@ use crate::rule::{MatchType, RuleSet};
 #[derive(Clone, Debug, PartialEq)]
 pub struct CategoryHit {
     pub category: String,
-    pub rule_id: &'static str,
+    pub rule_id: String,
     pub confidence: f32,
 }
 
@@ -21,8 +21,8 @@ pub fn categorize(rules: &RuleSet, description: &str) -> Option<CategoryHit> {
         };
         if matched {
             return Some(CategoryHit {
-                category: rule.category.to_string(),
-                rule_id: rule.id,
+                category: rule.category.clone(),
+                rule_id: rule.id.clone(),
                 confidence: rule.confidence,
             });
         }
