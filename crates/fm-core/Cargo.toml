@@ -6,4 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "FinanceManager — shared domain types (Transaction, ImportId, UserId, etc.). Pure types, no I/O."
+description = "FinanceManager — shared domain types (UserId, errors). Pure types, no I/O."
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

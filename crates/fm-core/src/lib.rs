@@ -5,3 +5,7 @@
 //! workspace.
 
 #![forbid(unsafe_code)]
+
+mod ids;
+
+pub use ids::{InvalidIdError, UserId};

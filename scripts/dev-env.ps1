@@ -7,8 +7,9 @@
 #
 # Or as a one-shot wrapper:
 #   .\scripts\dev.ps1                  # sets up env + runs `npm run tauri dev`
-
-$ErrorActionPreference = 'Stop'
+#
+# Intentionally does NOT set $ErrorActionPreference, because cargo writes
+# progress to stderr and we don't want that to terminate the caller's shell.
 
 # 1. Ensure ~/.cargo/bin is on PATH for this session.
 $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'

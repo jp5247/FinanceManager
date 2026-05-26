@@ -10,3 +10,9 @@ description = "FinanceManager — StorageRepository seam, atomic-write helper, p
 
 [dependencies]
 fm-core = { path = "../fm-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
