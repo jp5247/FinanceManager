@@ -47,3 +47,14 @@ export const getImport = (importId: string): Promise<UploadResult> =>
 
 export const deleteImport = (importId: string): Promise<void> =>
   invoke<void>("delete_import", { importId });
+
+export const recategorizeTransaction = (
+  importId: string,
+  rowNumber: number,
+  category: string,
+): Promise<UploadResult> =>
+  invoke<UploadResult>("recategorize_transaction", {
+    importId,
+    rowNumber,
+    category,
+  });

@@ -187,6 +187,72 @@ pub fn get_import(import_id: String, state: State<AppState>) -> Result<UploadRes
     Ok(into_upload_result(meta_doc.data, txn_doc.data))
 }
 
+/// Set / clear the category on one specific transaction row. Saves the
+/// update, recomputes the per-import category breakdown, and returns the
+/// fresh [`UploadResult`] so the UI can re-render.
+///
+/// Pass an empty `category` to clear the assignment and mark the row
+/// uncategorized again.
+#[tauri::command]
+pub fn recategorize_transaction(
+    import_id: String,
+    row_number: u32,
+    category: String,
+    state: State<AppState>,
+) -> Result<UploadResult, String> {
+    let (user, dek) = session(&state)?;
+
+    let meta_rel = upload_path(&import_id, "file-meta.json");
+    let txn_rel = upload_path(&import_id, "raw-transactions.json");
+
+    let meta_doc: VersionedJson<FileMeta> = read_encrypted_json(&state, &user, &dek, &meta_rel)?;
+    let txn_doc: VersionedJson<Vec<RawTransaction>> =
+        read_encrypted_json(&state, &user, &dek, &txn_rel)?;
+
+    if meta_doc.schema_version != FILE_META_SCHEMA {
+        return Err(format!("import {import_id} has unsupported meta schema"));
+    }
+    if txn_doc.schema_version != RAW_TXN_SCHEMA {
+        return Err(format!("import {import_id} has unsupported txn schema"));
+    }
+
+    let mut rows = txn_doc.data;
+    let row = rows
+        .iter_mut()
+        .find(|r| r.row_number == row_number)
+        .ok_or_else(|| format!("row {row_number} not found in {import_id}"))?;
+
+    let trimmed = category.trim();
+    if trimmed.is_empty() {
+        row.category = None;
+        row.category_rule_id = None;
+    } else {
+        row.category = Some(trimmed.to_string());
+        row.category_rule_id = Some("manual".to_string());
+    }
+
+    let breakdown = build_category_breakdown(&rows);
+    let mut meta = meta_doc.data;
+    meta.category_breakdown = breakdown;
+
+    write_encrypted_json(
+        &state,
+        &user,
+        &dek,
+        &meta_rel,
+        &VersionedJson::new(FILE_META_SCHEMA, &meta),
+    )?;
+    write_encrypted_json(
+        &state,
+        &user,
+        &dek,
+        &txn_rel,
+        &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
+    )?;
+
+    Ok(into_upload_result(meta, rows))
+}
+
 /// Remove an import's directory entirely. Idempotent — missing dir is OK.
 #[tauri::command]
 pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), String> {

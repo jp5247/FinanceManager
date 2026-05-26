@@ -1,164 +1,105 @@
-//! Categorization tests against real-shape transaction descriptions
-//! (synthetic merchants only — no PII).
+//! Categorization engine tests. With the built-in rule set now empty, these
+//! cover the engine itself (priority ordering, contains/regex matching) by
+//! constructing ad-hoc rule sets.
 
-use fm_categorize::{categorize, default_rules};
+use fm_categorize::{categorize, contains_rule, default_rules, regex_rule, Rule, RuleSet};
 
-fn cat(desc: &str) -> Option<String> {
-    categorize(&default_rules(), desc).map(|h| h.category)
+#[test]
+fn default_rules_ship_empty() {
+    // The product intentionally ships no auto-rules. User rules and curated
+    // merchant lookup arrive in follow-up work.
+    assert!(default_rules().is_empty());
 }
 
 #[test]
-fn salary_credit() {
+fn contains_rule_matches_case_insensitively() {
+    let rs = RuleSet::new(vec![contains_rule(
+        "food/swiggy",
+        500,
+        "swiggy",
+        "Food Delivery",
+    )]);
     assert_eq!(
-        cat("NEFT CR-SCBL0036001-EMPLOYER PVT LTD-JAI-SALARY APR 2026"),
-        Some("Salary".into())
-    );
-    assert_eq!(cat("PAYROLL CR FROM ACME CORP"), Some("Salary".into()));
-}
-
-#[test]
-fn interest_credit() {
-    assert_eq!(cat("INTEREST CREDIT BY HDFC BANK"), Some("Interest".into()));
-    assert_eq!(cat("Savings interest cr"), Some("Interest".into()));
-}
-
-#[test]
-fn food_delivery_via_upi() {
-    assert_eq!(
-        cat("UPI-SWIGGY INSTAMART-639203@OKAXIS-...-...-PAID VIA CRED"),
-        Some("Groceries".into())
-    );
-    assert_eq!(
-        cat("UPI-ZOMATO LTD-zomato.payments@ybl"),
+        categorize(&rs, "UPI-SWIGGY-MERCHANT").map(|h| h.category),
         Some("Food Delivery".into())
     );
+    assert_eq!(
+        categorize(&rs, "swiggy lower case").map(|h| h.category),
+        Some("Food Delivery".into())
+    );
+    assert_eq!(categorize(&rs, "unrelated"), None);
 }
 
 #[test]
-fn rent_payment() {
-    assert_eq!(cat("UPI/RENT/APR2026"), Some("Rent".into()));
-    assert_eq!(cat("RENT PAYMENT TO LANDLORD"), Some("Rent".into()));
-}
-
-#[test]
-fn fuel() {
+fn regex_rule_supports_case_insensitive_flag() {
+    let rs = RuleSet::new(vec![regex_rule(
+        "atm",
+        500,
+        r"(?i)\bATM\s+WDL\b",
+        "ATM / Cash",
+    )]);
     assert_eq!(
-        cat("UPI-HPCL PETROL PUMP-HPCL@HDFCBANK"),
-        Some("Fuel".into())
-    );
-    assert_eq!(cat("IOC FUEL STATION CHEMBUR"), Some("Fuel".into()));
-}
-
-#[test]
-fn cab_ride() {
-    assert_eq!(
-        cat("UPI-UBER INDIA SYSTEMS P-UBER1.RZP@HDFCBANK-UBERRIDE"),
-        Some("Cab/Ride".into())
-    );
-    // "ola" alone shouldn't catch random merchants like "Solapur".
-    // We don't catch this as anything specific — it falls to UPI Transfer
-    // because the description has the realistic "UPI-" prefix.
-    assert_eq!(
-        cat("UPI-SOLAPUR FRUITS-MERCHANT"),
-        Some("UPI Transfer".into())
-    );
-    assert_eq!(cat("OLA CABS BOOKING"), Some("Cab/Ride".into()));
-    assert_eq!(cat("RAPIDO BIKE BOOKING"), Some("Cab/Ride".into()));
-}
-
-#[test]
-fn online_shopping() {
-    assert_eq!(
-        cat("UPI-AMAZON SELLER SERVICES"),
-        Some("Online Shopping".into())
-    );
-    assert_eq!(cat("UPI-FLIPKART INTERNET"), Some("Online Shopping".into()));
-}
-
-#[test]
-fn cc_payment_and_emi() {
-    assert_eq!(
-        cat("BPPY CC PAYMENT DP016124192045 PAYMENT ON CRED"),
-        Some("Credit Card Payment".into())
-    );
-    assert_eq!(
-        cat("OFFUS EMI,PRIN NB:02,00000138162352"),
-        Some("Loan EMI".into())
-    );
-}
-
-#[test]
-fn investments() {
-    assert_eq!(
-        cat("UPI-UPSTOX SECURITIES PV-UPSTOX.BRK@VALIDHDFC"),
-        Some("Investments".into())
-    );
-    assert_eq!(
-        cat("UPI-FINZOOM INVESTMENT A-INDMONEY3.PAYU@"),
-        Some("Investments".into())
-    );
-}
-
-#[test]
-fn atm_cash() {
-    assert_eq!(
-        cat("ATM WDL CARD 1234 AT BRANCH"),
-        Some("ATM / Cash".into())
-    );
-    assert_eq!(
-        cat("CASH DEPOSIT BY - SELF - MIRA ROAD"),
+        categorize(&rs, "atm wdl at branch").map(|h| h.category),
         Some("ATM / Cash".into())
     );
 }
 
 #[test]
-fn ach_generic() {
-    assert_eq!(
-        cat("ACH D- INDIAN CLEARING CORP-D6800438X028"),
-        Some("Bank Transfer".into())
-    );
-    assert_eq!(
-        cat("CEMTEX DEP ACHCr NACH00000000021008 INDIAN ENERGY"),
-        Some("Bank Transfer".into())
-    );
+fn higher_priority_wins() {
+    let rs = RuleSet::new(vec![
+        contains_rule("specific", 1000, "swiggy instamart", "Groceries"),
+        contains_rule("generic", 100, "swiggy", "Food Delivery"),
+    ]);
+    let hit = categorize(&rs, "UPI-SWIGGY INSTAMART-639203").unwrap();
+    assert_eq!(hit.category, "Groceries");
+    assert_eq!(hit.rule_id, "specific");
 }
 
 #[test]
-fn upi_to_person_falls_through_to_generic() {
-    // No specific merchant match → catch-all.
-    assert_eq!(
-        cat("UPI-MEETALI PRAVIN PATEL-PMMEETALIPATEL"),
-        Some("UPI Transfer".into())
-    );
+fn rules_sorted_by_priority_descending_on_construction() {
+    let rs = RuleSet::new(vec![
+        contains_rule("a", 100, "a", "A"),
+        contains_rule("b", 500, "b", "B"),
+        contains_rule("c", 300, "c", "C"),
+    ]);
+    let prios: Vec<i32> = rs.iter().map(|r| r.priority).collect();
+    assert_eq!(prios, vec![500, 300, 100]);
 }
 
 #[test]
-fn completely_unknown_returns_none() {
-    assert_eq!(cat("RANDOMTHING WITHOUT ANY KEYWORD"), None);
-    assert_eq!(cat(""), None);
+fn with_appends_and_resorts() {
+    let rs = RuleSet::new(vec![contains_rule("a", 100, "a", "A")])
+        .with(vec![contains_rule("b", 999, "b", "B")]);
+    let prios: Vec<i32> = rs.iter().map(|r| r.priority).collect();
+    assert_eq!(prios, vec![999, 100]);
 }
 
 #[test]
-fn rule_set_is_sorted_by_priority_desc() {
+fn no_match_returns_none() {
+    let rs: RuleSet = RuleSet::new(vec![contains_rule("a", 1, "amazon", "Shop")]);
+    assert!(categorize(&rs, "totally unrelated").is_none());
+    assert!(categorize(&rs, "").is_none());
+}
+
+#[test]
+fn rule_set_with_no_rules_returns_none_for_anything() {
+    let empty = RuleSet::new(Vec::new());
+    assert!(categorize(&empty, "anything goes").is_none());
+}
+
+#[test]
+fn no_built_in_rule_classifies_indian_railway_dividend() {
+    // Regression: a NACH dividend from Indian Railway Finance Corp must NOT
+    // be auto-classified as Train Travel. With built-ins empty, it stays
+    // unclassified — the manual recategorize UI handles it.
     let rs = default_rules();
-    let mut prev = i32::MAX;
-    for r in &rs.rules {
-        assert!(
-            r.priority <= prev,
-            "rule {:?} priority {} should be <= prev {}",
-            r.id,
-            r.priority,
-            prev
-        );
-        prev = r.priority;
-    }
+    assert!(categorize(&rs, "CEMTEX DEP ACHCr NACH00000000006531 INDIAN RAILWAY").is_none());
 }
 
-#[test]
-fn higher_priority_wins_over_lower() {
-    let h = categorize(&default_rules(), "UPI-SWIGGY-INSTAMART").unwrap();
-    // Specific food/instamart rule (priority 750) should win over the
-    // generic upi/generic catch-all (priority 100).
-    assert_eq!(h.category, "Groceries");
-    assert_ne!(h.rule_id, "upi/generic");
+// Compile-time sanity: Rule constructors stay usable as the public API for
+// when user-saved rules land.
+#[allow(dead_code)]
+fn _types_compile() {
+    let _: Rule = contains_rule("x", 1, "y", "Cat");
+    let _: Rule = regex_rule("x", 1, r"(?i)y", "Cat");
 }

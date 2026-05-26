@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   deleteImport,
   getImport,
   listImports,
+  recategorizeTransaction,
   uploadPdf,
 } from "../ipc";
 import type { FileMeta, RawTransaction, UploadResult } from "../types";
+import { COMMON_CATEGORIES, UNCATEGORIZED } from "../categories";
 
 type Stage =
   | { kind: "idle" }
@@ -169,6 +171,10 @@ export function UploadView() {
           displayed={stage.displayed}
           isFresh={stage.isFresh}
           onClose={() => setStage({ kind: "idle" })}
+          onRowChanged={(updated) => {
+            setStage({ kind: "viewing", displayed: updated, isFresh: false });
+            void refreshImports();
+          }}
         />
       )}
 
@@ -186,9 +192,29 @@ interface ResultProps {
   displayed: UploadResult;
   isFresh: boolean;
   onClose: () => void;
+  onRowChanged: (updated: UploadResult) => void;
 }
 
-function ResultPanel({ displayed, isFresh, onClose }: ResultProps) {
+function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps) {
+  const [editing, setEditing] = useState<{ row: RawTransaction } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (newCategory: string) => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const updated = await recategorizeTransaction(
+        displayed.importId,
+        editing.row.rowNumber,
+        newCategory,
+      );
+      onRowChanged(updated);
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="card result-panel">
       <header className="result-header">
@@ -215,7 +241,16 @@ function ResultPanel({ displayed, isFresh, onClose }: ResultProps) {
 
       <CategoryBreakdownPanel breakdown={displayed.categoryBreakdown ?? []} />
 
-      <TransactionTable rows={displayed.transactions} />
+      <TransactionTable rows={displayed.transactions} onEditCategory={(row) => setEditing({ row })} />
+
+      {editing && (
+        <RecategorizeModal
+          row={editing.row}
+          saving={saving}
+          onSave={submit}
+          onCancel={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }
@@ -334,7 +369,12 @@ function SummaryTiles({ debitCount, creditCount, totalDebit, totalCredit }: Summ
   );
 }
 
-function TransactionTable({ rows }: { rows: RawTransaction[] }) {
+interface TableProps {
+  rows: RawTransaction[];
+  onEditCategory: (row: RawTransaction) => void;
+}
+
+function TransactionTable({ rows, onEditCategory }: TableProps) {
   if (rows.length === 0) {
     return <p className="muted">No transactions parsed.</p>;
   }
@@ -356,13 +396,18 @@ function TransactionTable({ rows }: { rows: RawTransaction[] }) {
               <td className="mono">{r.txnDate}</td>
               <td>{r.description}</td>
               <td>
-                {r.category ? (
-                  <span className="category-chip" title={r.categoryRuleId ?? undefined}>
-                    {r.category}
-                  </span>
-                ) : (
-                  <span className="muted">—</span>
-                )}
+                <button
+                  type="button"
+                  className={`category-chip-btn ${r.category ? "" : "uncategorized"}`}
+                  title={
+                    r.categoryRuleId
+                      ? `rule: ${r.categoryRuleId} · click to change`
+                      : "click to assign a category"
+                  }
+                  onClick={() => onEditCategory(r)}
+                >
+                  {r.category ?? UNCATEGORIZED}
+                </button>
               </td>
               <td className="num">{r.debit ? fmtINR(r.debit) : ""}</td>
               <td className="num credit">{r.credit ? fmtINR(r.credit) : ""}</td>
@@ -370,6 +415,107 @@ function TransactionTable({ rows }: { rows: RawTransaction[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+interface RecategorizeProps {
+  row: RawTransaction;
+  saving: boolean;
+  onSave: (newCategory: string) => void;
+  onCancel: () => void;
+}
+
+const OTHER = "Other…";
+
+function RecategorizeModal({ row, saving, onSave, onCancel }: RecategorizeProps) {
+  const current = row.category ?? "";
+  const isCustom = current && !COMMON_CATEGORIES.includes(current);
+  const [selection, setSelection] = useState<string>(
+    isCustom ? OTHER : current || COMMON_CATEGORIES[0],
+  );
+  const [customText, setCustomText] = useState<string>(isCustom ? current : "");
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const finalCategory = selection === OTHER ? customText.trim() : selection;
+    onSave(finalCategory);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <form
+        className="card modal-card"
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3>Categorize transaction</h3>
+        <p className="muted small">
+          <strong className="mono">{row.txnDate}</strong> · {row.description}
+        </p>
+
+        <label>
+          <span>Category</span>
+          <select
+            value={selection}
+            onChange={(e) => setSelection(e.target.value)}
+            disabled={saving}
+          >
+            {COMMON_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value={OTHER}>{OTHER}</option>
+          </select>
+        </label>
+
+        {selection === OTHER && (
+          <label>
+            <span>Custom category</span>
+            <input
+              type="text"
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="e.g. Pet care"
+              autoFocus
+              disabled={saving}
+            />
+          </label>
+        )}
+
+        <div className="row">
+          {row.category && (
+            <button
+              type="button"
+              className="btn btn-link inline danger"
+              onClick={() => onSave("")}
+              disabled={saving}
+              title="Mark this row as Uncategorized"
+            >
+              Clear
+            </button>
+          )}
+          <span className="row-spacer" />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={
+              saving || (selection === OTHER && customText.trim().length === 0)
+            }
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

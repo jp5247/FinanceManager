@@ -38,6 +38,7 @@ pub fn run() {
             upload::list_imports,
             upload::get_import,
             upload::delete_import,
+            upload::recategorize_transaction,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

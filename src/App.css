@@ -511,6 +511,97 @@ code {
   white-space: nowrap;
 }
 
+.category-chip-btn {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 120ms, border-color 120ms;
+}
+
+.category-chip-btn:hover {
+  background: rgba(0, 229, 255, 0.16);
+  border-color: var(--neon-cyan);
+}
+
+.category-chip-btn.uncategorized {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+.category-chip-btn.uncategorized:hover {
+  border-color: var(--neon-cyan);
+  color: var(--text-primary);
+}
+
+/* --- Recategorize modal --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 16, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-card {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.modal-card h3 {
+  margin: 0;
+}
+
+.modal-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.modal-card label > span {
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.modal-card select {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.modal-card select:focus {
+  border-color: var(--neon-cyan);
+}
+
+.row-spacer {
+  flex: 1;
+}
+
+.btn-link.danger {
+  color: var(--danger);
+}
+
 /* --- Category breakdown panel --- */
 .breakdown-panel {
   margin: 1rem 0;
