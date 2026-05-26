@@ -255,7 +255,62 @@ Supporting pieces:
 - Split / reimbursement handling (4.2.8).
 - Hash-chained audit log surface in UI (audit crate exists; no viewer yet).
 
-## 11. Pre-commit workflow (mandatory)
+## 11. Open decisions register
+
+Single home for product, UX, and engineering decisions that have been raised but not resolved. Sources: Section 7 (original brief), `/five-lens` audit outputs, ad-hoc decisions noted during implementation. Sweep this section as part of the pre-commit workflow (Section 12) — when a decision lands, move it to 11.4 with its resolving commit.
+
+### 11.1 Product / analysis-rule decisions (originally Section 7.2)
+
+| ID | Question | Default if undecided |
+|---|---|---|
+| P1 | Definitive transaction category taxonomy (current LLM list of 31 is a working approximation, not a product decision) | Keep current list; revisit when Dashboard surfaces per-category insights |
+| P2 | Reimbursements (split): reduce spending immediately on mark, or only after settlement confirmation? | Immediate, with a "pending settlement" flag |
+| P3 | Own-account transfers (e.g. savings → CC payment): treat as neutral / exclude from income+expense? | Neutral by default; surface a visible "transfer" classification |
+| P4 | Cash withdrawals default treatment (expense vs holding) | Treat as expense unless user manually marks held cash |
+| P5 | Financial-health score weights (savings rate / debt burden / essential vs discretionary / investment consistency) | Equal weight (25% each) as v1 placeholder |
+| P6 | Loan classification criteria: rate threshold vs tax-benefit-and-asset-productivity vs net effective cost | Net effective borrowing cost (most defensible) |
+
+### 11.2 UX / surfacing decisions
+
+| ID | Question | Default if undecided |
+|---|---|---|
+| U1 | Should re-categorize-import show a per-row "what changed" diff to the user? (Audit F-CRIT-3) | No diff in v1; add only if users miss silent changes |
+| U2 | Per-session Gemini request counter visible in LLM settings card? (Audit D5 / F-COST-1) | No counter in v1 |
+| U3 | Tauri `emit("llm:rate-limited")` during the 8s retry pause so the UI can show "retrying after rate limit…"? (Audit D6 / F-INF-1) | No emit; keep upload spinner generic |
+| U4 | Multi-user login method finalization (PIN-only / passphrase / OS-account binding) — currently passphrase + recovery phrase | Status quo (passphrase + recovery) until a second user surface is needed |
+
+### 11.3 Engineering / hardening decisions
+
+| ID | Question | Default if undecided |
+|---|---|---|
+| E1 | Invalidate cached `Uncategorized` entries on *every* recategorize trigger, or only on model swap? (Audit D3 / F-COST-2) | Status quo (invalidate on all triggers) |
+| E2 | `manual-cleared` sentinel: how should `recategorize_import` treat a row where the user explicitly cleared the category to defer? (Audit D4 / F-CRIT-2) | Add `category_rule_id = "manual-cleared"` and treat as manual |
+| E3 | Excel export shape: single workbook with sheets per module, or one workbook per module? (Original 7.4.1) | Single workbook, multi-sheet |
+| E4 | Excel export contents: formulas or values-only snapshots? (Original 7.4.2) | Values-only |
+| E5 | Pre-built monthly PDF report generation in Phase 1? (Original 7.4.3) | Deferred to Phase 2 |
+| E6 | Optional local encrypted backup/export package for disaster recovery? (Original 7.3.2) | Deferred to Phase 2 |
+| E7 | Hash-chained audit-log UI surface in Phase 1? (Original 7.3.3 + Section 10.6 gap) | Yes — small viewer in settings |
+| E8 | Internet access blocked unless user explicitly enables per-lookup? (Original 7.3.4) | Status quo: profile-level toggle (LLM enabled flag); no per-lookup prompt |
+| E9 | Shared Gemini-models constants table between Rust (`llm_config.rs`) and TS (`UploadView.tsx`)? (Audit F-CRIT-5) | Keep separate; revisit if drift ever bites |
+
+### 11.4 Resolved (recent)
+
+| ID | Decision | Resolved in |
+|---|---|---|
+| ~~7.1.1~~ | UI stack — Tauri + React + TypeScript | scaffold (51c63c4) |
+| ~~7.1.2~~ | Internet lookup user-opt-in (not always-offline) | LLM config + Gemini ship |
+| ~~7.1.3~~ | External lookup approach — curated API (Gemini) with strict privacy filter | LLM client + OD-5 egress guard |
+| ~~7.1.4~~ | Unsupported bank statement formats: rejected with adapter-not-found error in v1 | parser registry behavior |
+| ~~7.3.1~~ | Encrypt local files by default — Yes (AES-256-GCM, per-profile DEK) | Phase-1 storage layer |
+| ~~D1~~ | Gemini API key transport — `x-goog-api-key` header (not URL query string) | 61e245c |
+| ~~D2~~ | Merchant cache key shape — composite `"{dir}\|{merchant}"` string | 61e245c |
+| ~~F-CRIT-1~~ | Direction-blind cache key — fixed | 61e245c |
+| ~~F-SEC-1~~ | API key in URL — fixed | 61e245c |
+| ~~F-SEC-2~~ | OD-5 egress guard — added | 61e245c |
+| ~~F-TDD-1~~ | `reapply_categories` invariants — covered by tests | 61e245c |
+
+## 12. Pre-commit workflow (mandatory)
 For every commit that changes user-visible behavior:
 1. Update Section 10 of this brief to reflect the change.
-2. Run the `/five-lens` skill on this brief to get a fresh planner pass over the five lenses (scalability, security, testing, architecture, cost). Address or capture any actionable finding before committing.
+2. Sweep Section 11 — move any newly-resolved decision into 11.4 with its commit hash; add any new ones surfaced this commit.
+3. Run the `/five-lens` skill on this brief to get a fresh planner pass over the five lenses (scalability, security, testing, architecture, cost). Address or capture any actionable finding before committing.
