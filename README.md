@@ -4,7 +4,25 @@ Local-first personal finance application for Indian retail banking statements. S
 
 ## Status
 
-Phase 0 (decisions and spikes). No application code yet.
+Phase 1 foundations in progress. Gate G0 closed (cross-issuer PDF parse validated). Workspace, CI, and Tauri shell scaffolded; product code lands in subsequent commits.
+
+## Running the app (Windows)
+
+Open a fresh PowerShell window, then:
+
+```powershell
+.\scripts\dev.ps1
+```
+
+That script sets up the dev shell (adds Rust to PATH, sources MSVC env from `vcvarsall.bat`) and starts `npm run tauri dev`. Use `.\scripts\build.ps1` for a release build.
+
+To set up the env once for an interactive shell (so plain `npm run tauri dev` / `cargo test` / etc. work for the rest of the session), dot-source the env script instead:
+
+```powershell
+. .\scripts\dev-env.ps1
+```
+
+**Why a wrapper script?** Our Visual Studio BuildTools install has a working compiler/linker on disk but a broken COM registration, so `vswhere.exe` returns empty and cargo's auto-detection can't find MSVC. The wrapper sources `vcvarsall.bat` to make the linker discoverable. Repairing the VS install (via the Visual Studio Installer → Modify → Repair) is the long-term fix; the wrapper is fine for now.
 
 ## Locked decisions (Phase 0)
 
@@ -27,22 +45,20 @@ Open decisions deferred to product input during their respective phases: OD-8 (r
 FinanceManager/
 ├── FinanceManager.md              Product brief
 ├── docs/design/                   Architecture & UI specs
-│   ├── local-data-schema.md
-│   └── ui-wireframe-spec.md
-├── spikes/
-│   └── pdf-parse/                 Phase-0 PDF stack spike (Rust)
-└── .claude/                       Agent + skill definitions
+├── crates/                        Cargo workspace — domain crates
+│   ├── fm-core                    Domain types (no I/O)
+│   ├── fm-storage                 StorageRepository seam, atomic write, path guard
+│   ├── fm-crypto                  AES-256-GCM envelope, Argon2id KDF, OS keystore
+│   ├── fm-audit                   Append-only hash-chained log
+│   └── fm-parser                  BankAdapter trait + normalization pipeline
+├── src-tauri/                     Tauri 2 desktop shell (crate name: fm-app)
+├── src/                           React 19 + TS 5 frontend
+├── spikes/pdf-parse/              Phase-0 PDF stack spike (Rust)
+├── scripts/                       PowerShell dev helpers
+└── .github/workflows/             CI: fmt + clippy + test + tsc + PII guard
 ```
-
-App scaffolding (Tauri shell, React UI, Rust core crates) is intentionally not yet created — it starts after the Phase 0 spike passes Gate G0.
-
-## Phase 0 — what is in flight
-
-1. **PDF parsing spike** — see [spikes/pdf-parse/README.md](spikes/pdf-parse/README.md). Awaiting fixture PDFs.
-2. **OCR latency spike** — same crate, `parse-scanned` binary.
-3. **CI bootstrap** — not yet started.
 
 ## Reference
 
-- Five-lens blueprint: produced in conversation (Goal, system context, findings, options, phased plan, controls, tests, governance, risks, gates, open decisions).
+- Five-lens blueprint: produced in conversation (goal, system context, findings, options, phased plan, controls, tests, governance, risks, gates, open decisions).
 - Risk register and gates: blueprint §9 / §10.
