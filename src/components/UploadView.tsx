@@ -7,6 +7,7 @@ import {
   getLlmConfig,
   listImports,
   listUserRules,
+  recategorizeImport,
   recategorizeTransaction,
   setLlmConfig,
   uploadPdf,
@@ -49,6 +50,10 @@ export function UploadView() {
   const [error, setError] = useState<string | null>(null);
   const [imports, setImports] = useState<FileMeta[]>([]);
   const [userRules, setUserRules] = useState<StoredRule[]>([]);
+  const [autoRecatBusy, setAutoRecatBusy] = useState(false);
+  const [autoRecatNote, setAutoRecatNote] = useState<string | null>(null);
+
+  const activeImportId = stage.kind === "viewing" ? stage.displayed.importId : null;
 
   const refreshImports = useCallback(async () => {
     try {
@@ -70,6 +75,29 @@ export function UploadView() {
     void refreshImports();
     void refreshUserRules();
   }, [refreshImports, refreshUserRules]);
+
+  // Re-run the categorization pipeline on the active import after the user
+  // changes something that could affect prior rows (LLM model, user rules).
+  const runAutoRecategorize = useCallback(async () => {
+    if (!activeImportId) return;
+    setAutoRecatBusy(true);
+    setAutoRecatNote(null);
+    try {
+      const updated = await recategorizeImport(activeImportId);
+      setStage({ kind: "viewing", displayed: updated, isFresh: false });
+      const llm = updated.llmCategorizedCount ?? 0;
+      setAutoRecatNote(
+        llm > 0
+          ? `Re-categorized — ${llm} more row${llm === 1 ? "" : "s"} via Gemini.`
+          : "Re-categorized.",
+      );
+      void refreshImports();
+    } catch (e) {
+      setAutoRecatNote(`Re-categorize failed: ${String(e)}`);
+    } finally {
+      setAutoRecatBusy(false);
+    }
+  }, [activeImportId, refreshImports]);
 
   const pickFile = async () => {
     setError(null);
@@ -192,17 +220,27 @@ export function UploadView() {
           displayed={stage.displayed}
           isFresh={stage.isFresh}
           onClose={() => setStage({ kind: "idle" })}
-          onRowChanged={(updated) => {
+          onRowChanged={(updated, savedNewRule) => {
             setStage({ kind: "viewing", displayed: updated, isFresh: false });
             void refreshImports();
             void refreshUserRules();
+            // A newly-saved rule might match other rows in this import —
+            // re-run the pipeline so they auto-categorize too.
+            if (savedNewRule) void runAutoRecategorize();
           }}
         />
       )}
 
+      {autoRecatBusy && (
+        <div className="auto-recat-toast info">Re-categorizing transactions…</div>
+      )}
+      {autoRecatNote && !autoRecatBusy && (
+        <div className="auto-recat-toast">{autoRecatNote}</div>
+      )}
+
       <PreviousImports
         imports={imports}
-        activeImportId={stage.kind === "viewing" ? stage.displayed.importId : null}
+        activeImportId={activeImportId}
         onOpen={openImport}
         onDelete={removeImport}
       />
@@ -213,13 +251,16 @@ export function UploadView() {
           try {
             const updated = await deleteUserRule(id);
             setUserRules(updated);
+            // Deleting a rule may flip rows back to Uncategorized — refresh
+            // the open import so the table reflects it.
+            void runAutoRecategorize();
           } catch (e) {
             setError(String(e));
           }
         }}
       />
 
-      <LlmSettingsPanel />
+      <LlmSettingsPanel onModelChanged={runAutoRecategorize} />
     </section>
   );
 }
@@ -228,10 +269,10 @@ interface ResultProps {
   displayed: UploadResult;
   isFresh: boolean;
   onClose: () => void;
-  onRowChanged: (updated: UploadResult) => void;
+  onRowChanged: (updated: UploadResult, savedNewRule: boolean) => void;
 }
 
-function LlmSettingsPanel() {
+function LlmSettingsPanel({ onModelChanged }: { onModelChanged: () => void }) {
   const [cfg, setCfg] = useState<LlmConfigView | null>(null);
   const [draftKey, setDraftKey] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -266,6 +307,10 @@ function LlmSettingsPanel() {
       const next = await setLlmConfig(update);
       setCfg(next);
       if (update.apiKey !== undefined) setDraftKey("");
+      // A model swap should re-try Gemini on previously-Uncategorized rows
+      // in the open import. Enabling/disabling or changing the key doesn't
+      // need to re-run (next upload picks it up).
+      if (update.model !== undefined) onModelChanged();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -394,7 +439,7 @@ function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps)
         newCategory,
         saveAsRule,
       );
-      onRowChanged(updated);
+      onRowChanged(updated, saveAsRule !== null);
       setEditing(null);
     } catch (e) {
       setError(String(e));

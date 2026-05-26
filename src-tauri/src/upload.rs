@@ -282,6 +282,71 @@ pub fn recategorize_transaction(
     Ok(into_upload_result(meta, rows))
 }
 
+/// Re-run the categorization pipeline on an existing import's transactions.
+/// Called from the UI after the user adds a rule or changes the LLM model so
+/// existing imports also reflect the change without a re-upload.
+///
+/// Manual edits (rows whose `category_rule_id` is `"manual"`) are preserved.
+/// "Uncategorized" entries in the merchant cache are cleared first so that a
+/// model swap actually gives those merchants a fresh chance.
+#[tauri::command]
+pub fn recategorize_import(
+    import_id: String,
+    state: State<AppState>,
+) -> Result<UploadResult, String> {
+    let (user, dek) = session(&state)?;
+
+    let meta_rel = upload_path(&import_id, "file-meta.json");
+    let txn_rel = upload_path(&import_id, "raw-transactions.json");
+    let meta_doc: VersionedJson<FileMeta> = read_encrypted_json(&state, &user, &dek, &meta_rel)?;
+    let txn_doc: VersionedJson<Vec<RawTransaction>> =
+        read_encrypted_json(&state, &user, &dek, &txn_rel)?;
+    if meta_doc.schema_version != FILE_META_SCHEMA {
+        return Err(format!("import {import_id} has unsupported meta schema"));
+    }
+    if txn_doc.schema_version != RAW_TXN_SCHEMA {
+        return Err(format!("import {import_id} has unsupported txn schema"));
+    }
+    let mut rows = txn_doc.data;
+
+    let user_rules = compile_stored(&load_rules(&state, &user, &dek)?.rules);
+    let rules = build_rules(user_rules);
+    reapply_categories(&mut rows, &rules);
+
+    // Drop cached Uncategorized entries so a model swap re-asks the LLM about
+    // merchants we previously gave up on.
+    if let Err(e) = invalidate_uncategorized_cache(&state, &user, &dek) {
+        // Non-fatal — surface as a warning later via the lookup outcome.
+        eprintln!("merchant cache invalidate failed: {e}");
+    }
+
+    let lookup = apply_external_lookup(&state, &user, &dek, &mut rows);
+
+    let category_breakdown = build_category_breakdown(&rows);
+    let mut meta = meta_doc.data;
+    meta.category_breakdown = category_breakdown;
+
+    write_encrypted_json(
+        &state,
+        &user,
+        &dek,
+        &meta_rel,
+        &VersionedJson::new(FILE_META_SCHEMA, &meta),
+    )?;
+    write_encrypted_json(
+        &state,
+        &user,
+        &dek,
+        &txn_rel,
+        &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
+    )?;
+
+    let mut result = into_upload_result(meta, rows);
+    result.lookup_warning = lookup.warning;
+    result.llm_categorized_count = lookup.llm_count;
+    Ok(result)
+}
+
 #[tauri::command]
 pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), String> {
     let (user, _dek) = session(&state)?;
@@ -437,6 +502,41 @@ fn apply_categories(rows: &mut [RawTransaction], rules: &RuleSet) {
             r.category = Some(UNCATEGORIZED.to_string());
         }
     }
+}
+
+/// Re-apply categorization to existing rows, preserving manual edits. Any row
+/// not flagged `"manual"` is treated like a fresh row: re-evaluated against
+/// the rule set, falling back to Uncategorized.
+fn reapply_categories(rows: &mut [RawTransaction], rules: &RuleSet) {
+    for r in rows {
+        if r.category_rule_id.as_deref() == Some("manual") {
+            continue;
+        }
+        if let Some(hit) = categorize(rules, &r.description) {
+            r.category = Some(hit.category);
+            r.category_rule_id = Some(hit.rule_id.to_string());
+        } else {
+            r.category = Some(UNCATEGORIZED.to_string());
+            r.category_rule_id = None;
+        }
+    }
+}
+
+/// Remove cache entries whose stored category is Uncategorized — a fresh
+/// pipeline run (e.g. after a model swap) should re-query the LLM about
+/// those merchants rather than short-circuiting on the prior failure.
+fn invalidate_uncategorized_cache(
+    state: &State<AppState>,
+    user: &UserId,
+    dek: &KeyBytes,
+) -> Result<(), String> {
+    let mut cache = merchant_cache::load(state, user, dek)?;
+    let before = cache.entries.len();
+    cache.entries.retain(|_, e| e.category != UNCATEGORIZED);
+    if cache.entries.len() == before {
+        return Ok(());
+    }
+    merchant_cache::save(state, user, dek, &cache)
 }
 
 #[derive(Default)]

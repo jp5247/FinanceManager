@@ -951,6 +951,21 @@ code {
   border-color: var(--neon-cyan);
 }
 
+.auto-recat-toast {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: 6px;
+  background: rgba(80, 220, 180, 0.08);
+  border: 1px solid rgba(80, 220, 180, 0.35);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.auto-recat-toast.info {
+  background: rgba(0, 220, 255, 0.08);
+  border-color: rgba(0, 220, 255, 0.35);
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {

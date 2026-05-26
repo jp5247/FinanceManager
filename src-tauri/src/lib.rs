@@ -43,6 +43,7 @@ pub fn run() {
             upload::get_import,
             upload::delete_import,
             upload::recategorize_transaction,
+            upload::recategorize_import,
             user_rules::list_user_rules,
             user_rules::delete_user_rule,
             llm_config::get_llm_config,
