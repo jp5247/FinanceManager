@@ -259,7 +259,7 @@ function LlmSettingsPanel() {
     );
   }
 
-  const persist = async (update: { enabled?: boolean; apiKey?: string }) => {
+  const persist = async (update: { enabled?: boolean; apiKey?: string; model?: string }) => {
     setSaving(true);
     setError(null);
     try {
@@ -342,15 +342,41 @@ function LlmSettingsPanel() {
         </div>
       </div>
 
+      <label className="llm-model-row">
+        <span className="muted xsmall">MODEL</span>
+        <select
+          value={cfg.model}
+          disabled={saving}
+          onChange={(e) => void persist({ model: e.target.value })}
+        >
+          {GEMINI_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          {!GEMINI_MODELS.some((m) => m.id === cfg.model) && (
+            <option value={cfg.model}>{cfg.model}</option>
+          )}
+        </select>
+      </label>
+
       <p className="muted xsmall">
-        Model: <span className="mono">{cfg.model}</span> · Free tier covers
-        ~1,500 requests/day. Each upload triggers at most one batched request.
+        Each upload triggers at most one batched request. If you hit a rate
+        limit, switch to a <span className="mono">-lite</span> variant — they
+        have higher per-minute quotas on the free tier.
       </p>
 
       {error && <div className="error-text">{error}</div>}
     </div>
   );
 }
+
+const GEMINI_MODELS: { id: string; label: string }[] = [
+  { id: "gemini-2.0-flash", label: "gemini-2.0-flash (default, 15 RPM)" },
+  { id: "gemini-2.0-flash-lite", label: "gemini-2.0-flash-lite (30 RPM)" },
+  { id: "gemini-2.5-flash", label: "gemini-2.5-flash (newer, 10 RPM)" },
+  { id: "gemini-2.5-flash-lite", label: "gemini-2.5-flash-lite (15 RPM)" },
+];
 
 function ResultPanel({ displayed, isFresh, onClose, onRowChanged }: ResultProps) {
   const [editing, setEditing] = useState<{ row: RawTransaction } | null>(null);

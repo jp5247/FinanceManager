@@ -929,6 +929,28 @@ code {
   border-color: var(--neon-cyan);
 }
 
+.llm-model-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0 0.4rem 0;
+}
+
+.llm-model-row select {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+}
+
+.llm-model-row select:focus {
+  outline: none;
+  border-color: var(--neon-cyan);
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {

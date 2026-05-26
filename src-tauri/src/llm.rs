@@ -10,7 +10,13 @@
 //! stay uncategorized.
 
 use serde::{Deserialize, Serialize};
+use std::thread;
 use std::time::Duration;
+
+/// Pause before the single retry on a 429. Keep it short enough that the user
+/// doesn't think the app froze, long enough that a per-minute quota window
+/// has a chance to roll over (Gemini's per-minute counter resets every 60s).
+const RATE_LIMIT_RETRY_DELAY: Duration = Duration::from_secs(8);
 
 /// What the LLM is told to choose from. Kept in sync with the categories
 /// the UI's recategorize picker offers.
@@ -125,24 +131,61 @@ pub fn categorize_via_gemini(
         urlencode(api_key)
     );
 
-    let response = ureq::post(&url)
-        .set("Content-Type", "application/json")
-        .timeout(Duration::from_secs(45))
-        .send_json(body);
-
-    let body_text = match response {
-        Ok(r) => r.into_string().map_err(|e| format!("read body: {e}"))?,
-        Err(ureq::Error::Status(code, resp)) => {
-            let detail = resp.into_string().unwrap_or_default();
-            return Err(format!(
-                "Gemini returned HTTP {code}: {}",
-                detail.chars().take(300).collect::<String>()
-            ));
-        }
-        Err(e) => return Err(format!("Gemini request failed: {e}")),
-    };
-
+    let body_text = send_with_retry(&url, &body)?;
     parse_gemini_response(&body_text, items)
+}
+
+/// One retry on 429 — Gemini's free tier has both a per-minute and per-day
+/// quota. A short pause covers the per-minute window; the per-day case still
+/// needs to be surfaced as a friendly error.
+fn send_with_retry(url: &str, body: &serde_json::Value) -> Result<String, String> {
+    for attempt in 0..2 {
+        let resp = ureq::post(url)
+            .set("Content-Type", "application/json")
+            .timeout(Duration::from_secs(45))
+            .send_json(body.clone());
+
+        match resp {
+            Ok(r) => return r.into_string().map_err(|e| format!("read body: {e}")),
+            Err(ureq::Error::Status(429, resp)) => {
+                let detail = resp.into_string().unwrap_or_default();
+                if attempt == 0 && !is_per_day_quota(&detail) {
+                    thread::sleep(RATE_LIMIT_RETRY_DELAY);
+                    continue;
+                }
+                return Err(friendly_429_message(&detail));
+            }
+            Err(ureq::Error::Status(code, resp)) => {
+                let detail = resp.into_string().unwrap_or_default();
+                return Err(format!(
+                    "Gemini returned HTTP {code}: {}",
+                    detail.chars().take(300).collect::<String>()
+                ));
+            }
+            Err(e) => return Err(format!("Gemini request failed: {e}")),
+        }
+    }
+    unreachable!("retry loop always returns")
+}
+
+/// Gemini reports per-day exhaustion with `quotaId` strings that contain
+/// `PerDay`. If we see that, retrying in 8s is pointless — surface it.
+fn is_per_day_quota(detail: &str) -> bool {
+    detail.contains("PerDay") || detail.contains("per day")
+}
+
+fn friendly_429_message(detail: &str) -> String {
+    if is_per_day_quota(detail) {
+        "Gemini daily quota exhausted. Free tier allows ~1,500 requests/day on \
+         gemini-2.0-flash. Switch to a different model in settings, or try again \
+         tomorrow."
+            .to_string()
+    } else {
+        "Gemini per-minute rate limit hit and retry didn't clear it. Try a \
+         model with a higher RPM (e.g. gemini-2.0-flash-lite) in settings, or \
+         wait a minute and re-upload."
+            .to_string()
+    }
 }
 
 fn build_prompt(items: &[LookupItem]) -> String {
@@ -406,6 +449,20 @@ mod tests {
         }];
         let body = r#"{"candidates":[]}"#;
         assert!(parse_gemini_response(body, &items).is_err());
+    }
+
+    #[test]
+    fn per_day_quota_detected_from_quota_id() {
+        let detail = r#"{"error":{"details":[{"quotaId":"GenerateContentRequestsPerDayPerProjectPerModel"}]}}"#;
+        assert!(is_per_day_quota(detail));
+        assert!(friendly_429_message(detail).contains("daily quota"));
+    }
+
+    #[test]
+    fn per_minute_quota_friendly_message() {
+        let detail = r#"{"error":{"details":[{"quotaId":"GenerateContentRequestsPerMinutePerProjectPerModel"}]}}"#;
+        assert!(!is_per_day_quota(detail));
+        assert!(friendly_429_message(detail).contains("per-minute"));
     }
 
     #[test]
