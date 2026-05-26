@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Set-Location C:\\\\source\\\\repos\\\\FinanceManager; . .\\\\scripts\\\\dev-env.ps1 | Out-Null; $ErrorActionPreference = 'Continue'; cargo fmt --all; cargo fmt --all --check; Write-Output \"fmt: $LASTEXITCODE\"; cargo clippy --workspace --all-targets -- -D warnings 2>&1 | Select-Object -Last 12; Write-Output \"clippy: $LASTEXITCODE\"; cargo test -p fm-pdf --no-fail-fast 2>&1 | Select-String 'test result:|^test ' | Select-Object -Last 15; Write-Output \"test: $LASTEXITCODE\")",
+      "PowerShell(Set-Location C:\\\\source\\\\repos\\\\FinanceManager; . .\\\\scripts\\\\dev-env.ps1 | Out-Null; $ErrorActionPreference = 'Continue'; $env:PATH = \"C:\\\\source\\\\repos\\\\FinanceManager\\\\pdfium-win-x64\\\\bin;$env:PATH\"; $env:FM_TEST_PDF = \"C:\\\\source\\\\repos\\\\FinanceManager\\\\Jai statements\\\\HDFC regalia May2026_Billedstatements_2025_25-05-26_23-24.pdf\"; cargo test -p fm-pdf -- --ignored 2>&1 | Select-String 'test result:|^test ' | Select-Object -Last 8; Write-Output \"exit: $LASTEXITCODE\")",
+      "PowerShell(Set-Location C:\\\\source\\\\repos\\\\FinanceManager; . .\\\\scripts\\\\dev-env.ps1 | Out-Null; $ErrorActionPreference = 'Continue'; cargo fmt --all; cargo fmt --all --check; Write-Output \"fmt: $LASTEXITCODE\"; $env:PATH = \"C:\\\\source\\\\repos\\\\FinanceManager\\\\pdfium-win-x64\\\\bin;$env:PATH\"; $env:FM_TEST_PDF = \"C:\\\\source\\\\repos\\\\FinanceManager\\\\Jai statements\\\\HDFC regalia May2026_Billedstatements_2025_25-05-26_23-24.pdf\"; cargo test -p fm-pdf -- --ignored 2>&1 | Select-String 'test result:|^test |Parsed' | Select-Object -Last 10; Write-Output \"test: $LASTEXITCODE\")",
+      "PowerShell(git -C C:\\\\source\\\\repos\\\\FinanceManager commit -m \"feat\\(pdf\\): fm-pdf crate wrapping pdfium-render for text extraction\")"
+    ]
+  }
+}

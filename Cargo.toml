@@ -6,6 +6,7 @@ members = [
     "crates/fm-crypto",
     "crates/fm-audit",
     "crates/fm-parser",
+    "crates/fm-pdf",
     "crates/fm-profile",
     "src-tauri",
 ]
@@ -29,6 +30,7 @@ serde_json = "1"
 tracing = "0.1"
 tempfile = "3"
 rust_decimal = { version = "1", default-features = false, features = ["serde-with-str"] }
+sha2 = "0.10"
 
 [profile.release]
 opt-level = 3

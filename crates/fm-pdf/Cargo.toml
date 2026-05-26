@@ -1,20 +1,18 @@
 [package]
-name = "fm-audit"
+name = "fm-pdf"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "FinanceManager — append-only hash-chained audit log."
+description = "FinanceManager — PDF text extraction (pdfium-render wrapper) producing ExtractedPdf for fm-parser."
 
 [dependencies]
-fm-core = { path = "../fm-core" }
-serde = { workspace = true }
-serde_json = { workspace = true }
+fm-parser = { path = "../fm-parser" }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
-time = { version = "0.3", features = ["formatting", "macros"] }
+pdfium-render = "0.8"
 
 [dev-dependencies]
 tempfile = { workspace = true }
