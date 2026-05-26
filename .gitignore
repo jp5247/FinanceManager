@@ -39,6 +39,9 @@ Desktop.ini
 secrets/*
 !secrets/README.md
 
+# Claude Code per-machine permission cache (paths leak into it)
+.claude/settings.local.json
+
 # User data (must never be committed)
 data/
 **/data/users/
