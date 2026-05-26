@@ -1,0 +1,12 @@
+[package]
+name = "fm-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "FinanceManager — StorageRepository seam, atomic-write helper, path-resolver with traversal guard."
+
+[dependencies]
+fm-core = { path = "../fm-core" }
