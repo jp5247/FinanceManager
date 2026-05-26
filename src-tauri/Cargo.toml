@@ -1,0 +1,26 @@
+[package]
+name = "fm-app"
+description = "FinanceManager — Tauri desktop application shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "fm_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+fm-core = { path = "../crates/fm-core" }
+fm-storage = { path = "../crates/fm-storage" }
+fm-crypto = { path = "../crates/fm-crypto" }
+fm-audit = { path = "../crates/fm-audit" }
+fm-parser = { path = "../crates/fm-parser" }

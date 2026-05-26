@@ -1,0 +1,24 @@
+# Force LF on text source files regardless of platform.
+# Avoids fmt/clippy churn between Windows checkouts and Linux CI.
+*.rs       text eol=lf
+*.toml     text eol=lf
+*.ts       text eol=lf
+*.tsx      text eol=lf
+*.js       text eol=lf
+*.jsx      text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.lock     text eol=lf
+
+# Binary by extension
+*.png      binary
+*.jpg      binary
+*.ico      binary
+*.icns     binary
+*.dll      binary
+*.exe      binary
+*.pdf      binary

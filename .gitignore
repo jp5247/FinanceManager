@@ -3,12 +3,19 @@ target/
 **/*.rs.bk
 Cargo.lock.bak
 
-# Node / Tauri (future)
+# Node / Tauri
 node_modules/
 dist/
 dist-ssr/
 .vite/
 src-tauri/target/
+src-tauri/gen/schemas/
+
+# TS incremental build artifacts (composite project refs)
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+vite.config.js.map
 
 # IDE
 .idea/

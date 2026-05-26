@@ -6,6 +6,7 @@ members = [
     "crates/fm-crypto",
     "crates/fm-audit",
     "crates/fm-parser",
+    "src-tauri",
 ]
 exclude = [
     "spikes/pdf-parse",
