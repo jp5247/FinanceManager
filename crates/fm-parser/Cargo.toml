@@ -13,3 +13,4 @@ fm-core = { path = "../fm-core" }
 serde = { workspace = true }
 thiserror = { workspace = true }
 regex = "1"
+rust_decimal = { workspace = true }

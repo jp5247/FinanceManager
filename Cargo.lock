@@ -967,6 +967,7 @@ version = "0.0.1"
 dependencies = [
  "fm-core",
  "regex",
+ "rust_decimal",
  "serde",
  "thiserror 2.0.18",
 ]
