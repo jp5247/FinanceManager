@@ -152,20 +152,27 @@ impl BankAdapter for HdfcSavingsAdapter {
                 }
                 let year = 2000 + yr2;
 
+                // Phase 1 — collect lines until `joined` ends with
+                // `amount balance`. Stop on hard break or next anchor.
                 let mut joined = caps[4].to_string();
                 let mut j = i + 1;
-                while j < lines.len()
-                    && anchor_re().captures(lines[j]).is_none()
-                    && !is_hard_break(lines[j])
-                {
-                    joined.push(' ');
-                    joined.push_str(lines[j].trim());
+                while trailing_amount_balance_re().captures(&joined).is_none() {
+                    if j >= lines.len() {
+                        break;
+                    }
+                    if is_hard_break(lines[j]) || anchor_re().captures(lines[j]).is_some() {
+                        break;
+                    }
+                    let extra = lines[j].trim();
+                    if !extra.is_empty() {
+                        joined.push(' ');
+                        joined.push_str(extra);
+                    }
                     j += 1;
                 }
-                let advance = j.max(i + 1);
 
                 let Some(ab_caps) = trailing_amount_balance_re().captures(&joined) else {
-                    i = advance;
+                    i = j.max(i + 1);
                     continue;
                 };
                 let amount_token = ab_caps.get(1).unwrap().as_str();
@@ -173,18 +180,35 @@ impl BankAdapter for HdfcSavingsAdapter {
                 let amount = Amount::parse_inr(amount_token)?.amount;
                 let balance = Amount::parse_inr(balance_token)?.amount;
 
+                let desc_end = ab_caps.get(0).unwrap().start();
+                let mut description = joined[..desc_end].trim().to_string();
+
+                // Phase 2 — any further continuation lines before the next
+                // anchor are description-only (no amounts).
+                while j < lines.len() {
+                    if is_hard_break(lines[j]) || anchor_re().captures(lines[j]).is_some() {
+                        break;
+                    }
+                    let extra = lines[j].trim();
+                    if !extra.is_empty() {
+                        if !description.is_empty() {
+                            description.push(' ');
+                        }
+                        description.push_str(extra);
+                    }
+                    j += 1;
+                }
+
+                if description.is_empty() {
+                    i = j.max(i + 1);
+                    continue;
+                }
+
                 let direction_credit = match prev_balance {
                     Some(prev) => balance.as_decimal() > prev,
                     None => false,
                 };
                 prev_balance = Some(balance.as_decimal());
-
-                let desc_end = ab_caps.get(0).unwrap().start();
-                let description = joined[..desc_end].trim().to_string();
-                if description.is_empty() {
-                    i = advance;
-                    continue;
-                }
 
                 let txn_date = format!("{year:04}-{month:02}-{day:02}");
                 let (debit, credit) = if direction_credit {
@@ -209,7 +233,7 @@ impl BankAdapter for HdfcSavingsAdapter {
                     balance: Some(balance),
                 });
 
-                i = advance;
+                i = j.max(i + 1);
             }
         }
 

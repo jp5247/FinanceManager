@@ -176,6 +176,51 @@ Some footer that shouldn't be absorbed.
     );
 }
 
+/// Regression: HDFC PDFs frequently produce three-line transactions where
+/// the amount+balance is on line 2 and another narration line follows on
+/// line 3. The earlier adapter joined all three into one string and lost
+/// the trailing amount+balance match, dropping the row entirely.
+#[test]
+fn three_line_wrap_with_trailing_narration_is_parsed() {
+    let body = r#"Opening Balance B/F 2,34,863.98
+01/04/26 UPI-MEETALI PRAVIN
+PATEL-PMMEETALIPATEL0000645720987618 01/04/26 27,692.00 2,07,171.98
+1@OKAXIS-HDFC0000358-645720987618-UPI
+01/04/26 ACH D- NEXT 0000003283708305 01/04/26 500.00 2,06,671.98
+"#;
+    let a = HdfcSavingsAdapter::new();
+    let p = make_pdf("HDFC savings.pdf", body);
+    let rows = a.parse(&p, "imp-001").unwrap();
+    assert_eq!(rows.len(), 2, "both rows should parse: {rows:#?}");
+
+    let r0 = &rows[0];
+    assert_eq!(r0.txn_date, "2026-04-01");
+    assert_eq!(
+        r0.debit,
+        Some(Amount::parse_inr("27692.00").unwrap().amount)
+    );
+    assert_eq!(
+        r0.balance,
+        Some(Amount::parse_inr("207171.98").unwrap().amount)
+    );
+    // Description absorbs the line-3 continuation.
+    assert!(
+        r0.description.contains("UPI-MEETALI PRAVIN"),
+        "description should include the merchant name: {}",
+        r0.description
+    );
+    assert!(
+        r0.description
+            .contains("1@OKAXIS-HDFC0000358-645720987618-UPI"),
+        "description should absorb the line-3 continuation: {}",
+        r0.description
+    );
+
+    let r1 = &rows[1];
+    assert_eq!(r1.txn_date, "2026-04-01");
+    assert_eq!(r1.debit, Some(Amount::parse_inr("500.00").unwrap().amount));
+}
+
 #[test]
 fn indian_lakhs_amount_and_balance_are_handled() {
     let body = r#"Opening Balance B/F 1,55,000.00
