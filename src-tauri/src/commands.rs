@@ -1,35 +1,44 @@
 use crate::state::AppState;
 use fm_core::UserId;
+use fm_crypto::RecoveryPhrase;
 use fm_profile::{ProfileSummary, Session};
+use serde::Serialize;
 use tauri::State;
 
-/// Returns one [`ProfileSummary`] per profile on disk. Empty list when
-/// the app runs for the first time.
+/// Payload returned by [`create_profile`]: profile summary plus the
+/// one-time-shown recovery phrase (formatted with dashes).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProfileResult {
+    pub summary: ProfileSummary,
+    pub recovery_phrase: String,
+}
+
 #[tauri::command]
 pub fn list_profiles(state: State<AppState>) -> Result<Vec<ProfileSummary>, String> {
     fm_profile::list_profiles(&state.data_root).map_err(|e| e.to_string())
 }
 
-/// Create a new profile and return the resulting [`ProfileSummary`]. The
-/// session is installed in [`AppState`] on success — the caller is now
-/// unlocked.
 #[tauri::command]
 pub fn create_profile(
     user_id: String,
     display_name: String,
     passphrase: String,
     state: State<AppState>,
-) -> Result<ProfileSummary, String> {
+) -> Result<CreateProfileResult, String> {
     let user = UserId::new(user_id).map_err(|e| e.to_string())?;
-    let session =
+    let (session, recovery) =
         fm_profile::create_profile(&state.storage, &user, &display_name, passphrase.as_bytes())
             .map_err(|e| e.to_string())?;
     let summary = summary_from_disk(&state, &user)?;
+    let recovery_str = recovery.to_display_string();
     install_session(&state, session)?;
-    Ok(summary)
+    Ok(CreateProfileResult {
+        summary,
+        recovery_phrase: recovery_str,
+    })
 }
 
-/// Unlock an existing profile and install its session.
 #[tauri::command]
 pub fn unlock_profile(
     user_id: String,
@@ -44,7 +53,21 @@ pub fn unlock_profile(
     Ok(summary)
 }
 
-/// Drop the current session. The KeyBytes inside zero on Drop.
+#[tauri::command]
+pub fn unlock_with_recovery(
+    user_id: String,
+    recovery_phrase: String,
+    state: State<AppState>,
+) -> Result<ProfileSummary, String> {
+    let user = UserId::new(user_id).map_err(|e| e.to_string())?;
+    let phrase = RecoveryPhrase::parse(&recovery_phrase).map_err(|e| e.to_string())?;
+    let session = fm_profile::unlock_profile_with_recovery(&state.storage, &user, &phrase)
+        .map_err(|e| e.to_string())?;
+    let summary = summary_from_disk(&state, &user)?;
+    install_session(&state, session)?;
+    Ok(summary)
+}
+
 #[tauri::command]
 pub fn lock_profile(state: State<AppState>) -> Result<(), String> {
     let mut guard = state.session.lock().map_err(|e| e.to_string())?;
@@ -52,7 +75,6 @@ pub fn lock_profile(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Returns the unlocked profile's summary, or `None` if locked.
 #[tauri::command]
 pub fn current_profile(state: State<AppState>) -> Result<Option<ProfileSummary>, String> {
     let user_id = {

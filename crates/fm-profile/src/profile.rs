@@ -3,7 +3,11 @@ use fm_crypto::{KdfParams, Salt};
 use serde::{Deserialize, Serialize};
 
 /// Schema version for `profile.json`.
-pub const PROFILE_META_SCHEMA: u32 = 1;
+///
+/// v2 added `recovery_salt` and renamed `salt` to `user_salt` when the
+/// key-wrapping refactor landed. v1 profiles are not migrated automatically;
+/// pre-release users must recreate them.
+pub const PROFILE_META_SCHEMA: u32 = 2;
 
 /// Schema version for the encrypted `settings.json`.
 pub const PROFILE_SETTINGS_SCHEMA: u32 = 1;
@@ -19,7 +23,10 @@ pub struct ProfileMeta {
     pub user_id: UserId,
     pub display_name: String,
     pub created_at: String,
-    pub salt: Salt,
+    /// Salt for the Argon2id derivation of the passphrase-KEK.
+    pub user_salt: Salt,
+    /// Salt for the Argon2id derivation of the recovery-phrase-KEK.
+    pub recovery_salt: Salt,
     pub kdf_params: KdfParams,
     pub timezone: String,
     pub currency: String,

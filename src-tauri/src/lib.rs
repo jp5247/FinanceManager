@@ -29,6 +29,7 @@ pub fn run() {
             commands::list_profiles,
             commands::create_profile,
             commands::unlock_profile,
+            commands::unlock_with_recovery,
             commands::lock_profile,
             commands::current_profile,
         ])

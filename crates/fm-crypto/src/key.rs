@@ -1,3 +1,5 @@
+use rand::rngs::OsRng;
+use rand::RngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub const KEY_LEN: usize = 32;
@@ -12,6 +14,13 @@ pub struct KeyBytes([u8; KEY_LEN]);
 
 impl KeyBytes {
     pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
+        Self(bytes)
+    }
+
+    /// Generate a fresh random key from the OS RNG.
+    pub fn random() -> Self {
+        let mut bytes = [0u8; KEY_LEN];
+        OsRng.fill_bytes(&mut bytes);
         Self(bytes)
     }
 

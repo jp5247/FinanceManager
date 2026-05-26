@@ -25,7 +25,7 @@ mod error;
 mod profile;
 mod session;
 
-pub use bootstrap::{create_profile, list_profiles, unlock_profile};
+pub use bootstrap::{create_profile, list_profiles, unlock_profile, unlock_profile_with_recovery};
 pub use error::ProfileError;
 pub use profile::{
     ProfileMeta, ProfileSettings, ProfileSummary, PROFILE_META_SCHEMA, PROFILE_SETTINGS_SCHEMA,

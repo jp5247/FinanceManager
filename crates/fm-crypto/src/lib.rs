@@ -30,8 +30,12 @@ mod error;
 mod kdf;
 mod key;
 pub mod keystore;
+mod recovery;
+mod wrap;
 
 pub use envelope::{open, seal, ENVELOPE_OVERHEAD, ENVELOPE_VERSION};
 pub use error::CryptoError;
 pub use kdf::{derive_key, generate_salt, KdfParams, Salt, SALT_LEN};
 pub use key::{KeyBytes, KEY_LEN};
+pub use recovery::RecoveryPhrase;
+pub use wrap::{unwrap_key, wrap_key};

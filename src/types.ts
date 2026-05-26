@@ -3,3 +3,8 @@ export interface ProfileSummary {
   displayName: string;
   createdAt: string;
 }
+
+export interface CreateProfileResult {
+  summary: ProfileSummary;
+  recoveryPhrase: string;
+}

@@ -7,7 +7,12 @@ interface Props {
   onCancel?: () => void;
 }
 
+type Stage =
+  | { kind: "form" }
+  | { kind: "showRecovery"; recovery: string; summary: ProfileSummary };
+
 export function ProfileCreate({ onCreated, onCancel }: Props) {
+  const [stage, setStage] = useState<Stage>({ kind: "form" });
   const [userId, setUserId] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [passphrase, setPassphrase] = useState("");
@@ -28,8 +33,8 @@ export function ProfileCreate({ onCreated, onCancel }: Props) {
     }
     setBusy(true);
     try {
-      const me = await createProfile(userId.trim(), displayName.trim(), passphrase);
-      onCreated(me);
+      const result = await createProfile(userId.trim(), displayName.trim(), passphrase);
+      setStage({ kind: "showRecovery", recovery: result.recoveryPhrase, summary: result.summary });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -37,12 +42,22 @@ export function ProfileCreate({ onCreated, onCancel }: Props) {
     }
   };
 
+  if (stage.kind === "showRecovery") {
+    return (
+      <RecoveryReveal
+        recovery={stage.recovery}
+        onContinue={() => onCreated(stage.summary)}
+      />
+    );
+  }
+
   return (
     <form className="card form-card" onSubmit={submit}>
       <h2>Create profile</h2>
       <p className="muted">
-        Local, encrypted at rest. Your passphrase derives the encryption key —
-        we cannot recover data if you lose it.
+        Local, encrypted at rest. Your passphrase is the daily unlock — but a
+        one-time recovery phrase shown next is the only way back in if you
+        forget it.
       </p>
 
       <label>
@@ -111,5 +126,63 @@ export function ProfileCreate({ onCreated, onCancel }: Props) {
         </button>
       </div>
     </form>
+  );
+}
+
+interface RecoveryProps {
+  recovery: string;
+  onContinue: () => void;
+}
+
+function RecoveryReveal({ recovery, onContinue }: RecoveryProps) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(recovery);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="card form-card">
+      <h2>Save your recovery phrase</h2>
+      <p className="muted">
+        This is shown <strong>once</strong>. If you ever forget your passphrase,
+        this is the only way to unlock your data. Write it down or store it in
+        a password manager — anywhere off this machine. We cannot recover it
+        for you.
+      </p>
+
+      <div className="recovery-display">
+        <code>{recovery}</code>
+      </div>
+
+      <div className="row">
+        <button type="button" className="btn btn-secondary" onClick={copy}>
+          {copied ? "Copied!" : "Copy to clipboard"}
+        </button>
+      </div>
+
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+        />
+        <span>I have saved this recovery phrase somewhere safe.</span>
+      </label>
+
+      <div className="row">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onContinue}
+          disabled={!confirmed}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
   );
 }

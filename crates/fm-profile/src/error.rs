@@ -14,6 +14,9 @@ pub enum ProfileError {
     #[error("incorrect passphrase")]
     WrongPassphrase,
 
+    #[error("incorrect recovery phrase")]
+    WrongRecoveryPhrase,
+
     #[error("profile file is corrupted or written by an incompatible version")]
     Corrupted,
 

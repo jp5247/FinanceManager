@@ -147,6 +147,15 @@ input:disabled {
   padding: 0;
   margin-left: 0.5rem;
   font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-link.inline {
+  margin-left: 0;
+}
+
+.hint-row {
+  text-align: left;
 }
 
 .btn-sm {
@@ -288,4 +297,36 @@ input:disabled {
 
 .placeholder-panel h2 {
   margin-top: 0;
+}
+
+.recovery-display {
+  background: var(--bg-input);
+  border: 1px solid var(--neon-magenta);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin: 0.4rem 0;
+  text-align: center;
+  box-shadow: 0 0 12px rgba(255, 0, 212, 0.18);
+}
+
+.recovery-display code {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: var(--neon-cyan);
+  user-select: all;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  margin: 0.3rem 0;
+}
+
+.check-row input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--neon-cyan);
 }
