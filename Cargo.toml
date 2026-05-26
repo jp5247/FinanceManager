@@ -8,6 +8,7 @@ members = [
     "crates/fm-parser",
     "crates/fm-pdf",
     "crates/fm-profile",
+    "crates/fm-categorize",
     "src-tauri",
 ]
 exclude = [

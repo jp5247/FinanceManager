@@ -236,5 +236,7 @@ fn parse_row(
         debit,
         credit,
         balance: None,
+        category: None,
+        category_rule_id: None,
     }))
 }

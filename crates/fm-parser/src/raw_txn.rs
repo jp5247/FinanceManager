@@ -26,4 +26,13 @@ pub struct RawTransaction {
     pub debit: Option<Amount>,
     pub credit: Option<Amount>,
     pub balance: Option<Amount>,
+
+    // --- Categorization (added by fm-categorize after parsing) ---
+    /// `None` when the parser produced the row but no rule matched yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// ID of the rule that classified this row, e.g. `"food/swiggy"`.
+    /// Useful for audit / debug — which rule fired?
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_rule_id: Option<String>,
 }

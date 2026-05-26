@@ -30,3 +30,4 @@ fm-audit = { path = "../crates/fm-audit" }
 fm-parser = { path = "../crates/fm-parser" }
 fm-pdf = { path = "../crates/fm-pdf" }
 fm-profile = { path = "../crates/fm-profile" }
+fm-categorize = { path = "../crates/fm-categorize" }

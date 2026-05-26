@@ -213,8 +213,73 @@ function ResultPanel({ displayed, isFresh, onClose }: ResultProps) {
         totalCredit={displayed.totalCredit}
       />
 
+      <CategoryBreakdownPanel breakdown={displayed.categoryBreakdown ?? []} />
+
       <TransactionTable rows={displayed.transactions} />
     </div>
+  );
+}
+
+interface BreakdownProps {
+  breakdown: import("../types").CategoryBreakdown[];
+}
+
+function CategoryBreakdownPanel({ breakdown }: BreakdownProps) {
+  if (breakdown.length === 0) return null;
+
+  // Show top categories by debit total. Items with zero debit (credit-only,
+  // e.g. salary) are listed in a separate group below.
+  const debitItems = breakdown.filter((b) => Number.parseFloat(b.totalDebit) > 0);
+  const creditItems = breakdown.filter(
+    (b) => Number.parseFloat(b.totalDebit) === 0 && Number.parseFloat(b.totalCredit) > 0,
+  );
+  const debitMax = debitItems.reduce(
+    (m, b) => Math.max(m, Number.parseFloat(b.totalDebit) || 0),
+    0,
+  );
+
+  return (
+    <section className="breakdown-panel">
+      <h4>Where the money went</h4>
+      <ul className="breakdown-list">
+        {debitItems.map((b) => {
+          const amt = Number.parseFloat(b.totalDebit) || 0;
+          const pct = debitMax > 0 ? (amt / debitMax) * 100 : 0;
+          return (
+            <li key={b.category} className="breakdown-row">
+              <div className="bk-name">{b.category}</div>
+              <div className="bk-bar" aria-hidden>
+                <div className="bk-bar-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="bk-count muted">
+                {b.debitCount} {b.debitCount === 1 ? "txn" : "txns"}
+              </div>
+              <div className="bk-amount">₹{fmtINR(b.totalDebit)}</div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {creditItems.length > 0 && (
+        <>
+          <h4 className="bk-heading-secondary">Money in</h4>
+          <ul className="breakdown-list">
+            {creditItems.map((b) => (
+              <li key={b.category} className="breakdown-row credit">
+                <div className="bk-name">{b.category}</div>
+                <div className="bk-bar" aria-hidden>
+                  <div className="bk-bar-fill credit" style={{ width: "100%" }} />
+                </div>
+                <div className="bk-count muted">
+                  {b.creditCount} {b.creditCount === 1 ? "txn" : "txns"}
+                </div>
+                <div className="bk-amount credit">₹{fmtINR(b.totalCredit)}</div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -280,6 +345,7 @@ function TransactionTable({ rows }: { rows: RawTransaction[] }) {
           <tr>
             <th>Date</th>
             <th>Description</th>
+            <th>Category</th>
             <th className="num">Debit</th>
             <th className="num">Credit</th>
           </tr>
@@ -289,6 +355,15 @@ function TransactionTable({ rows }: { rows: RawTransaction[] }) {
             <tr key={`${r.importId}-${r.rowNumber}`}>
               <td className="mono">{r.txnDate}</td>
               <td>{r.description}</td>
+              <td>
+                {r.category ? (
+                  <span className="category-chip" title={r.categoryRuleId ?? undefined}>
+                    {r.category}
+                  </span>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
               <td className="num">{r.debit ? fmtINR(r.debit) : ""}</td>
               <td className="num credit">{r.credit ? fmtINR(r.credit) : ""}</td>
             </tr>

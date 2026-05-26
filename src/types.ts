@@ -24,6 +24,19 @@ export interface RawTransaction {
   debit: string | null;
   credit: string | null;
   balance: string | null;
+
+  /** Set after categorization. `null` for pre-categorization data. */
+  category?: string | null;
+  /** ID of the rule that fired, e.g. `"food/swiggy"`. */
+  categoryRuleId?: string | null;
+}
+
+export interface CategoryBreakdown {
+  category: string;
+  debitCount: number;
+  creditCount: number;
+  totalDebit: string;
+  totalCredit: string;
 }
 
 export interface FileMeta {
@@ -40,6 +53,8 @@ export interface FileMeta {
   /** Decimal string, e.g. "274712.52". */
   totalDebit: string;
   totalCredit: string;
+  /** Optional — empty for pre-categorization imports. */
+  categoryBreakdown?: CategoryBreakdown[];
 }
 
 export interface UploadResult {
@@ -54,5 +69,6 @@ export interface UploadResult {
   creditCount: number;
   totalDebit: string;
   totalCredit: string;
+  categoryBreakdown: CategoryBreakdown[];
   transactions: RawTransaction[];
 }

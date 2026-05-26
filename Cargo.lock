@@ -908,6 +908,7 @@ name = "fm-app"
 version = "0.0.1"
 dependencies = [
  "fm-audit",
+ "fm-categorize",
  "fm-core",
  "fm-crypto",
  "fm-parser",
@@ -935,6 +936,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "time",
+]
+
+[[package]]
+name = "fm-categorize"
+version = "0.0.1"
+dependencies = [
+ "regex",
+ "serde",
 ]
 
 [[package]]

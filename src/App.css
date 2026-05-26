@@ -500,6 +500,110 @@ code {
   color: var(--neon-cyan);
 }
 
+.category-chip {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* --- Category breakdown panel --- */
+.breakdown-panel {
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.breakdown-panel h4 {
+  margin: 0 0 0.6rem 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bk-heading-secondary {
+  margin-top: 1rem !important;
+}
+
+.breakdown-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(100px, 2fr) auto 110px;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.88rem;
+}
+
+.bk-name {
+  font-weight: 500;
+}
+
+.bk-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bk-bar-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--neon-magenta) 0%,
+    rgba(255, 0, 212, 0.4) 100%
+  );
+  transition: width 200ms;
+}
+
+.bk-bar-fill.credit {
+  background: linear-gradient(
+    90deg,
+    var(--neon-cyan) 0%,
+    rgba(0, 229, 255, 0.4) 100%
+  );
+}
+
+.bk-count {
+  font-size: 0.78rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bk-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+}
+
+.bk-amount.credit {
+  color: var(--neon-cyan);
+}
+
+@media (max-width: 640px) {
+  .breakdown-row {
+    grid-template-columns: 1fr auto;
+  }
+  .breakdown-row .bk-bar {
+    display: none;
+  }
+}
+
 /* --- Previous imports list --- */
 .previous-imports ul {
   list-style: none;

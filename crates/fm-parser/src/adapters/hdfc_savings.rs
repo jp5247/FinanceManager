@@ -231,6 +231,8 @@ impl BankAdapter for HdfcSavingsAdapter {
                     debit,
                     credit,
                     balance: Some(balance),
+                    category: None,
+                    category_rule_id: None,
                 });
 
                 i = j.max(i + 1);
