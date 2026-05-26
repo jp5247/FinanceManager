@@ -7,6 +7,11 @@ interface Props {
   onLocked: () => void;
 }
 
+function initial(name: string): string {
+  const ch = name.trim().charAt(0);
+  return ch ? ch.toUpperCase() : "?";
+}
+
 export function Home({ me, onLocked }: Props) {
   const [busy, setBusy] = useState(false);
 
@@ -23,10 +28,40 @@ export function Home({ me, onLocked }: Props) {
   return (
     <>
       <header className="topbar">
-        <div className="brand">FinanceManager</div>
+        <div className="brand-row">
+          <svg
+            className="logo-mark"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <rect x="3" y="14" width="4" height="7" rx="1" />
+            <rect x="10" y="10" width="4" height="11" rx="1" />
+            <rect x="17" y="5" width="4" height="16" rx="1" />
+            <polyline
+              points="4,11 11,6 15,8 21,3"
+              fill="none"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="brand">FinanceManager</span>
+        </div>
+
         <div className="user-chip">
-          <span className="muted">unlocked as</span> <strong>{me.displayName}</strong>
-          <button className="btn btn-link" onClick={lock} disabled={busy}>
+          <div className="avatar" aria-hidden="true">
+            {initial(me.displayName)}
+          </div>
+          <div className="user-text">
+            <span className="muted xsmall">unlocked as</span>
+            <strong>{me.displayName}</strong>
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={lock}
+            disabled={busy}
+            title="Lock and return to picker"
+          >
             Lock
           </button>
         </div>

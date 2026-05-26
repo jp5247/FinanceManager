@@ -149,6 +149,11 @@ input:disabled {
   font-size: 0.85rem;
 }
 
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+}
+
 .full-width {
   width: 100%;
 }
@@ -229,10 +234,52 @@ input:disabled {
   margin-bottom: 1.5rem;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.logo-mark {
+  width: 26px;
+  height: 26px;
+  fill: var(--neon-cyan);
+  stroke: var(--neon-magenta);
+  filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.35));
+}
+
 .user-chip {
   font-size: 0.9rem;
   display: flex;
   align-items: center;
+  gap: 0.7rem;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-magenta));
+  color: #00161c;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.25);
+}
+
+.user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.xsmall {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .placeholder-panel {
