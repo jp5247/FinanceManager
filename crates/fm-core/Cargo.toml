@@ -11,6 +11,8 @@ description = "FinanceManager — shared domain types (UserId, errors). Pure typ
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+rust_decimal = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+rust_decimal_macros = "1"

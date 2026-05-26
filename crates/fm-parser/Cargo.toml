@@ -6,7 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "FinanceManager — BankAdapter trait and the normalization pipeline (text → normalized rows)."
+description = "FinanceManager — BankAdapter trait + first per-issuer parsers."
 
 [dependencies]
 fm-core = { path = "../fm-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+regex = "1"

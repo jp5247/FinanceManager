@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+mod amount;
 mod ids;
 
+pub use amount::{Amount, AmountParseError, ParsedAmount, Sign};
 pub use ids::{InvalidIdError, UserId};
