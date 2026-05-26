@@ -149,6 +149,43 @@ fn indian_lakhs_amount_is_handled() {
 }
 
 #[test]
+fn inline_rewards_summary_does_not_bleed_into_description() {
+    // Lifted from a real Regalia statement where the "Rewards Program Points
+    // Summary" table is rendered immediately after the last UPI row of the
+    // cycle. pdfium emits the summary lines without a blank gap, so the
+    // wrap-line absorber would previously glue them onto the transaction.
+    let body = r#"20/04/2026| 00:00 UPI-MAHESH SHETTY G M C 90.00 l
+Rewards Program Points Summary
+SR NO. PROGRAMS BONUS POINTS
+1 1% CP on other spendsAcc 8 pts
+2 3% CP on select Categories Acc 64 pts
+Total 72 pts
+Cash Back Summary
+SR NO. TRANSACTION AMOUNT
+1 CASHBACK FOR REDEMPTION OF PO250326 C 704.00
+Total
+"#;
+    let a = HdfcCreditCardAdapter::new();
+    let p = make_pdf("HDFC regalia.pdf", body);
+    let rows = a.parse(&p, "imp-001").unwrap();
+    assert_eq!(rows.len(), 1, "got {} rows: {rows:#?}", rows.len());
+    let r = &rows[0];
+    assert_eq!(r.description, "UPI-MAHESH SHETTY G M");
+    assert_eq!(r.debit, Some(Amount::parse_inr("90.00").unwrap().amount));
+    assert!(r.credit.is_none());
+    assert!(
+        !r.description.to_lowercase().contains("rewards"),
+        "rewards summary bled into description: {}",
+        r.description
+    );
+    assert!(
+        !r.description.contains("704"),
+        "cashback amount captured as transaction: {}",
+        r.description
+    );
+}
+
+#[test]
 fn registry_detects_hdfc_cc() {
     let adapters = default_adapters();
     let p = make_pdf("HDFC regalia.pdf", HDFC_REGALIA_BODY);

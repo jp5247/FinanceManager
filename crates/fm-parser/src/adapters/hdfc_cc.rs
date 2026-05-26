@@ -61,6 +61,20 @@ fn amount_re() -> &'static Regex {
     R.get_or_init(|| Regex::new(r"[\d,]+\.\d{2}").expect("static regex"))
 }
 
+/// End-of-row amount marker: optional `+`, the corrupted rupee glyph
+/// (`C` / `₹`), the amount, and an optional purchase-indicator suffix
+/// (`l` in the original, but pdfium occasionally extracts it as `I`).
+///
+/// Used to stop wrap-line absorption: once a row has its currency-marked
+/// terminator, anything after it (e.g. an inline "Rewards Program Points
+/// Summary" table) belongs to the next logical block, not this transaction.
+fn row_terminator_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"(?:\+\s*)?(?:C|₹)\s*[\d,]+\.\d{2}\s*[lI]?\s*$").expect("static regex")
+    })
+}
+
 fn is_hard_break(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() {
@@ -69,13 +83,18 @@ fn is_hard_break(line: &str) -> bool {
     if t.starts_with("Page ") {
         return true;
     }
-    // Known HDFC CC section headers that interrupt transaction rows.
+    // Known HDFC CC section headers that interrupt transaction rows. We've
+    // seen pdfium emit several spelling variants of the rewards section
+    // header depending on the card product, so list them all.
     matches!(
         t,
         "Domestic Transactions"
             | "International Transactions"
             | "Past Dues"
             | "Reward Points Summary"
+            | "Rewards Program Points Summary"
+            | "Cash Back Summary"
+            | "Rewards Summary"
     )
 }
 
@@ -142,7 +161,14 @@ impl BankAdapter for HdfcCreditCardAdapter {
 
                 let mut joined = caps[5].to_string();
                 let mut j = i + 1;
-                while j < lines.len()
+                // Absorb wrap-lines until we hit the next transaction anchor,
+                // a hard break, OR the row has already captured its amount
+                // terminator. The last condition prevents inline section
+                // tables (rewards summaries, cash-back tables) that the PDF
+                // extractor places right under a transaction row from being
+                // glued onto the description.
+                while !row_terminator_re().is_match(joined.trim_end())
+                    && j < lines.len()
                     && anchor_re().captures(lines[j]).is_none()
                     && !is_hard_break(lines[j])
                 {
