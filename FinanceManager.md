@@ -199,8 +199,63 @@ Export scope:
 6. Multi-user local profile separation is functional.
 7. No sensitive data leaves machine.
 
-## 9. Implementation artifacts added
-1. Detailed local file-based schema and lifecycle:
-	- docs/design/local-data-schema.md
-2. Wireframe-level UI screen specification:
-	- docs/design/ui-wireframe-spec.md
+## 9. Implementation artifacts
+(Previous Phase-0 design notes — local data schema and UI wireframes — have been retired now that Section 10 captures the shipped behavior directly.)
+
+## 10. Implementation status (Phase 1, in flight)
+
+Captures behavior actually shipped on `master`. Update this section as part of every commit that adds or changes user-visible behavior.
+
+### 10.1 Tech stack chosen
+- Tauri 2 + React 19 + Vite 6 + TypeScript 5 (decision against 7.1.1).
+- Cargo workspace under `crates/` for parser, storage, crypto, audit, profile, pdf, categorize; `src-tauri/` hosts the app shell + Tauri commands.
+
+### 10.2 Multi-user + at-rest encryption (delivers 2.5, 4.7, 6.4, 7.3.1)
+- Per-profile data root with passphrase-derived KEK (Argon2id) wrapping a per-profile DEK.
+- Recovery-phrase wrap of the same DEK for the forgot-passphrase path.
+- All JSON files (file metadata, raw transactions, rules, merchant cache, LLM config) sealed with AES-256-GCM via `fm-crypto` before hitting disk.
+
+### 10.3 PDF ingest + adapter framework (delivers 4.2.1–4.2.4, 5.5)
+- `fm-pdf` wraps pdfium-render for text extraction; password-protected statements supported via a per-upload prompt.
+- `BankAdapter` trait with currently three adapters: HDFC credit card, HDFC savings (balance-delta direction inference + two-phase wrap absorption), SBI savings (positional columns). Adapter is auto-selected by filename hint + page-text detection.
+- Per-import audit-ready provenance fields on every row (source file, sha256, page, parser version + backend).
+- Duplicate-upload guard: re-importing the same PDF by content hash is refused.
+- **HDFC CC wrap-line termination**: absorption stops once the row has its currency-marked amount terminator (`(+)? (C|₹) <amount> [l|I]?$`), preventing inline "Rewards Program Points Summary" / "Cash Back Summary" tables from being glued onto the preceding transaction's description.
+
+### 10.4 Categorization pipeline (delivers 2.4, 4.2.4, 4.2.5)
+Order is fixed and matches OD-5:
+1. **User-saved rules** (priority 1000) — created via the recategorize modal's "Save as a rule" toggle, persisted encrypted at `mappings/category-rules.json`.
+2. **Curated merchant table** (priority 500) — contains-only entries shipped with the app (no regex keyword fishing after the IRFC-dividend / "Indian Railway" false-positive incident).
+3. **External LLM lookup (Gemini, opt-in)** — for rows still uncategorized, the extracted merchant name + direction (debit/credit) are sent to Google's Generative Language API. **Only those two fields per row leave the device** — never amounts, dates, account masks, ref-IDs, or balances.
+4. Anything still unmatched stays `Uncategorized` and is surfaced for manual recategorization.
+
+Supporting pieces:
+- **Per-profile merchant cache** (`mappings/merchant-cache.json`, encrypted): every LLM result — including `Uncategorized` outcomes — is cached so repeat uploads don't re-pay. Cache key is lowercased merchant string.
+- **Privacy-preserving merchant extractor** in `fm-categorize::extract_merchant`: strips UPI/ACH/NACH/NEFT/CC EMI/BillPay prefixes and ref-IDs before anything is considered for an external call.
+- **Gemini client** (`src-tauri/src/llm.rs`): batched single-request-per-upload, structured JSON response schema constrained to the app's allowed category list (off-list values are dropped to `Uncategorized` so the picker stays consistent). API key travels via the `x-goog-api-key` header (never the URL query string).
+- **OD-5 egress guard**: last-line defense in `categorize_via_gemini` rejects items whose merchant string still carries long digit runs (≥ 6), `XXXX` masks, `@` UPI handles, or amount-like tokens. Dropped items come back as `Uncategorized` without a network call.
+- **Direction-keyed merchant cache**: `cache_key(merchant, direction)` composes a `d|`/`c|` prefix so the same merchant in opposite directions cannot poison each other (regression prevention for the IRFC dividend / Indian Railway false-positive class — see `merchant_cache::tests::key_separates_directions_for_same_merchant`).
+- **429 handling**: one retry with an 8s backoff for per-minute quota; per-day quota is detected via the `PerDay` quotaId hint and surfaces a friendly "switch model or try tomorrow" error without burning a retry.
+- **Model selector in UI**: free-tier options (`gemini-2.0-flash`, `-flash-lite`, `gemini-2.5-flash`, `-flash-lite`) selectable from the LLM settings card. Switching the model auto-triggers re-categorization on the currently open import.
+- **Auto-recategorize triggers**: a new `recategorize_import` Tauri command re-runs the full pipeline on an existing import while preserving manual edits (rows whose `category_rule_id == "manual"` are untouched). It fires automatically when the user changes the LLM model, saves a new rule via the modal, or deletes a user rule. Cached `Uncategorized` entries are invalidated before the re-run so a model swap gets a fresh Gemini attempt.
+
+### 10.5 Upload result surface (delivers 4.2.6, 4.2.7)
+- Per-statement summary tiles (Debits / Credits / Net flow).
+- "Where the money went" category breakdown bar chart per import.
+- Recategorize modal with optional "Save as a rule" → user rules panel below.
+- Inline note when N rows were categorized via Gemini in this run; magenta warning when external lookup failed (the upload itself always succeeds).
+- Previous imports list with click-to-view + delete.
+
+### 10.6 Not yet implemented (Phase 1 backlog)
+- Dashboard tab (4.1) — financial overview, fix-my-finance, trends, health strip.
+- Past Analysis tab (4.3).
+- Investment Inputs tab (4.4).
+- Loan Tracker tab (4.5).
+- Excel export (4.6) — currently the data is queryable only through the Upload tab.
+- Split / reimbursement handling (4.2.8).
+- Hash-chained audit log surface in UI (audit crate exists; no viewer yet).
+
+## 11. Pre-commit workflow (mandatory)
+For every commit that changes user-visible behavior:
+1. Update Section 10 of this brief to reflect the change.
+2. Run the `/five-lens` skill on this brief to get a fresh planner pass over the five lenses (scalability, security, testing, architecture, cost). Address or capture any actionable finding before committing.

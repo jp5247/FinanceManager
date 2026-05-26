@@ -4,6 +4,7 @@
 //! source), the result is cached locally so future uploads skip the round
 //! trip. Stored encrypted at `mappings/merchant-cache.json`.
 
+use crate::llm::Direction;
 use crate::state::AppState;
 use fm_core::UserId;
 use fm_crypto::{open, seal, KeyBytes};
@@ -29,8 +30,17 @@ pub struct MerchantCacheDoc {
     pub entries: HashMap<String, MerchantCacheEntry>,
 }
 
-pub(crate) fn cache_key(merchant: &str) -> String {
-    merchant.trim().to_lowercase()
+/// Cache key includes the direction (debit / credit) because the same
+/// merchant string can land in different categories depending on which way
+/// money is flowing — e.g. INDIAN RAILWAY incoming is a Dividend (IRFC),
+/// outgoing is Train Travel. A direction-blind key would re-introduce that
+/// false-positive class.
+pub(crate) fn cache_key(merchant: &str, direction: Direction) -> String {
+    let dir = match direction {
+        Direction::Debit => 'd',
+        Direction::Credit => 'c',
+    };
+    format!("{dir}|{}", merchant.trim().to_lowercase())
 }
 
 pub(crate) fn load(
@@ -90,7 +100,21 @@ mod tests {
 
     #[test]
     fn key_normalizes_case_and_whitespace() {
-        assert_eq!(cache_key("SWIGGY INSTAMART"), "swiggy instamart");
-        assert_eq!(cache_key("  Amazon  "), "amazon");
+        assert_eq!(
+            cache_key("SWIGGY INSTAMART", Direction::Debit),
+            "d|swiggy instamart"
+        );
+        assert_eq!(cache_key("  Amazon  ", Direction::Debit), "d|amazon");
+    }
+
+    #[test]
+    fn key_separates_directions_for_same_merchant() {
+        // Regression for the IRFC / Indian Railway false-positive class: a
+        // credit hit on this merchant must not poison the debit-side lookup.
+        let debit = cache_key("INDIAN RAILWAY", Direction::Debit);
+        let credit = cache_key("INDIAN RAILWAY", Direction::Credit);
+        assert_ne!(debit, credit);
+        assert!(debit.starts_with("d|"));
+        assert!(credit.starts_with("c|"));
     }
 }

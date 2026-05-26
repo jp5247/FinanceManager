@@ -9,7 +9,9 @@
 //! returns gibberish, the upload still succeeds — the affected rows just
 //! stay uncategorized.
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 
@@ -85,6 +87,12 @@ pub struct LookupResult {
 /// Send the batched prompt to Gemini. Returns one result per input item;
 /// items that fail to classify are returned with category =
 /// `"Uncategorized"` so the caller doesn't have to track gaps.
+///
+/// Last-line OD-5 defense lives here: any item whose merchant string still
+/// looks PII-shaped after [`crate::merchant`]-level extraction (long digit
+/// runs, account masks, UPI handle artifacts, amount-like tokens) is dropped
+/// before the request leaves the device. Dropped items come back as
+/// Uncategorized so the caller doesn't see a gap.
 pub fn categorize_via_gemini(
     api_key: &str,
     model: &str,
@@ -97,7 +105,28 @@ pub fn categorize_via_gemini(
         return Ok(Vec::new());
     }
 
-    let prompt = build_prompt(items);
+    // Split safe vs unsafe up front. We send only the safe subset to Gemini;
+    // unsafe entries are stamped Uncategorized in the final output.
+    let safe_mask: Vec<bool> = items.iter().map(|it| is_od5_safe(&it.merchant)).collect();
+    let safe_items: Vec<LookupItem> = items
+        .iter()
+        .zip(safe_mask.iter())
+        .filter(|(_, &ok)| ok)
+        .map(|(it, _)| it.clone())
+        .collect();
+
+    if safe_items.is_empty() {
+        // Everything got rejected by the OD-5 guard — no network call.
+        return Ok(items
+            .iter()
+            .map(|it| LookupResult {
+                merchant: it.merchant.clone(),
+                category: "Uncategorized".to_string(),
+            })
+            .collect());
+    }
+
+    let prompt = build_prompt(&safe_items);
     let body = serde_json::json!({
         "contents": [
             { "parts": [ { "text": prompt } ] }
@@ -126,22 +155,64 @@ pub fn categorize_via_gemini(
     });
 
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        urlencode(model),
-        urlencode(api_key)
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        urlencode(model)
     );
 
-    let body_text = send_with_retry(&url, &body)?;
-    parse_gemini_response(&body_text, items)
+    let body_text = send_with_retry(&url, api_key, &body)?;
+    let safe_results = parse_gemini_response(&body_text, &safe_items)?;
+
+    // Re-merge: walk the original items, taking from safe_results when the
+    // mask says safe, stamping Uncategorized otherwise.
+    let mut safe_iter = safe_results.into_iter();
+    let merged = items
+        .iter()
+        .zip(safe_mask.iter())
+        .map(|(it, &ok)| {
+            if ok {
+                safe_iter.next().unwrap_or(LookupResult {
+                    merchant: it.merchant.clone(),
+                    category: "Uncategorized".to_string(),
+                })
+            } else {
+                LookupResult {
+                    merchant: it.merchant.clone(),
+                    category: "Uncategorized".to_string(),
+                }
+            }
+        })
+        .collect();
+    Ok(merged)
+}
+
+/// Last-chance OD-5 sanity check: reject merchant strings that still look
+/// like they carry account numbers, UPI handles, masked digits, or amounts.
+/// The merchant extractor strips these at parse time; this is belt-and-
+/// suspenders for adapters that haven't been hardened yet.
+fn is_od5_safe(merchant: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    let unsafe_re = R.get_or_init(|| {
+        // - `\d{6,}` long digit runs (ref-IDs, account numbers, mobile #s)
+        // - `@` UPI handle that survived prefix stripping
+        // - `X{4,}` masked account/card digits
+        // - `\d+\.\d{2}` decimal amount that leaked into description
+        Regex::new(r"\d{6,}|@|X{4,}|\d+\.\d{2}").expect("static regex")
+    });
+    let trimmed = merchant.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    !unsafe_re.is_match(trimmed)
 }
 
 /// One retry on 429 — Gemini's free tier has both a per-minute and per-day
 /// quota. A short pause covers the per-minute window; the per-day case still
 /// needs to be surfaced as a friendly error.
-fn send_with_retry(url: &str, body: &serde_json::Value) -> Result<String, String> {
+fn send_with_retry(url: &str, api_key: &str, body: &serde_json::Value) -> Result<String, String> {
     for attempt in 0..2 {
         let resp = ureq::post(url)
             .set("Content-Type", "application/json")
+            .set("x-goog-api-key", api_key)
             .timeout(Duration::from_secs(45))
             .send_json(body.clone());
 
@@ -449,6 +520,38 @@ mod tests {
         }];
         let body = r#"{"candidates":[]}"#;
         assert!(parse_gemini_response(body, &items).is_err());
+    }
+
+    #[test]
+    fn od5_guard_rejects_long_digit_runs() {
+        assert!(!is_od5_safe("SOMEMERCHANT 1234567"));
+        assert!(!is_od5_safe("UPI-REF 09999999980421000325273"));
+    }
+
+    #[test]
+    fn od5_guard_rejects_masked_or_handle_artifacts() {
+        assert!(!is_od5_safe("XXXX1234 SWIPE"));
+        assert!(!is_od5_safe("john@oksbi"));
+        assert!(!is_od5_safe("INDIA XXXX"));
+    }
+
+    #[test]
+    fn od5_guard_rejects_embedded_amounts() {
+        assert!(!is_od5_safe("MERCHANT 1582.00"));
+    }
+
+    #[test]
+    fn od5_guard_accepts_clean_merchants() {
+        assert!(is_od5_safe("SWIGGY INSTAMART"));
+        assert!(is_od5_safe("Amazon Pay"));
+        assert!(is_od5_safe("MAHESH SHETTY G M"));
+        assert!(is_od5_safe("FORTPOINTMUMBAIMUMBAI"));
+    }
+
+    #[test]
+    fn od5_guard_rejects_empty() {
+        assert!(!is_od5_safe(""));
+        assert!(!is_od5_safe("   "));
     }
 
     #[test]

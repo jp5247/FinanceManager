@@ -916,6 +916,7 @@ dependencies = [
  "fm-profile",
  "fm-storage",
  "rand",
+ "regex",
  "rust_decimal",
  "serde",
  "serde_json",

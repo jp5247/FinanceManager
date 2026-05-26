@@ -572,7 +572,7 @@ fn collect_pending(rows: &[RawTransaction]) -> Vec<Pending> {
         } else {
             continue;
         };
-        let key = merchant_cache::cache_key(&extracted.name);
+        let key = merchant_cache::cache_key(&extracted.name, direction);
         out.push(Pending {
             row_idx: idx,
             merchant: extracted.name,
@@ -678,8 +678,12 @@ fn apply_external_lookup(
     let now = merchant_cache::now_rfc3339();
     let mut by_key_result: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    for r in &lookup_results {
-        let key = merchant_cache::cache_key(&r.merchant);
+    // `lookup_results` is positionally aligned with `items` (Gemini returns
+    // one result per input). Zip so we recover the direction that goes into
+    // the cache key — without it, a credit Indian Railway hit would poison
+    // the debit lookup of the same merchant on the next upload.
+    for (item, r) in items.iter().zip(lookup_results.iter()) {
+        let key = merchant_cache::cache_key(&r.merchant, item.direction);
         by_key_result.insert(key.clone(), r.category.clone());
         cache.entries.insert(
             key,
@@ -827,6 +831,9 @@ fn now_rfc3339() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fm_categorize::{contains_rule, RuleSet};
+    use fm_core::Amount;
+    use fm_parser::ParserBackend;
 
     #[test]
     fn import_id_shape() {
@@ -848,5 +855,80 @@ mod tests {
     fn parse_year_month_rejects_bad_id() {
         assert!(parse_year_month("not-an-import-id").is_none());
         assert!(parse_year_month("imp-2026-99-99-abcdef").is_some());
+    }
+
+    fn fixture_row(
+        description: &str,
+        category: Option<&str>,
+        rule_id: Option<&str>,
+    ) -> RawTransaction {
+        RawTransaction {
+            import_id: "imp-001".into(),
+            source_file: "fixture.pdf".into(),
+            source_sha256: "deadbeef".into(),
+            source_page: 1,
+            row_number: 1,
+            parser_version: "test@0.0.0".into(),
+            parser_backend: ParserBackend::Pdfium,
+            txn_date: "2026-05-01".into(),
+            description: description.into(),
+            debit: Some(Amount::parse_inr("100.00").unwrap().amount),
+            credit: None,
+            balance: None,
+            category: category.map(|s| s.into()),
+            category_rule_id: rule_id.map(|s| s.into()),
+        }
+    }
+
+    fn rules_with_swiggy() -> RuleSet {
+        RuleSet::new(vec![contains_rule(
+            "curated/swiggy",
+            500,
+            "SWIGGY",
+            "Food Delivery",
+        )])
+    }
+
+    #[test]
+    fn reapply_categories_preserves_manual_edits() {
+        // A user-manually-set row keeps its category even when a rule would now
+        // claim that description. This is the contract recategorize_import
+        // depends on — losing it silently rewrites the user's decisions.
+        let mut rows = vec![
+            fixture_row("SWIGGY ORDER", Some("Restaurants"), Some("manual")),
+            fixture_row("SWIGGY ORDER", Some("Uncategorized"), None),
+        ];
+        reapply_categories(&mut rows, &rules_with_swiggy());
+
+        assert_eq!(rows[0].category.as_deref(), Some("Restaurants"));
+        assert_eq!(rows[0].category_rule_id.as_deref(), Some("manual"));
+        assert_eq!(rows[1].category.as_deref(), Some("Food Delivery"));
+        assert_eq!(rows[1].category_rule_id.as_deref(), Some("curated/swiggy"));
+    }
+
+    #[test]
+    fn reapply_categories_demotes_rows_whose_rule_disappeared() {
+        // A row previously stamped by a curated rule should fall back to
+        // Uncategorized when the rule set no longer matches it.
+        let mut rows = vec![fixture_row(
+            "UNKNOWN MERCHANT",
+            Some("Food Delivery"),
+            Some("curated/swiggy"),
+        )];
+        reapply_categories(&mut rows, &rules_with_swiggy());
+
+        assert_eq!(rows[0].category.as_deref(), Some(UNCATEGORIZED));
+        assert!(rows[0].category_rule_id.is_none());
+    }
+
+    #[test]
+    fn reapply_categories_picks_up_newly_matching_rule() {
+        // The auto-recategorize trigger after a user adds a rule: rows that
+        // used to be Uncategorized should now flip to the new category.
+        let mut rows = vec![fixture_row("SWIGGY ORDER", Some(UNCATEGORIZED), None)];
+        reapply_categories(&mut rows, &rules_with_swiggy());
+
+        assert_eq!(rows[0].category.as_deref(), Some("Food Delivery"));
+        assert_eq!(rows[0].category_rule_id.as_deref(), Some("curated/swiggy"));
     }
 }
