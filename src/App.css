@@ -60,13 +60,14 @@ body, html, #root {
   min-height: 100vh;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 0 1.5rem 1.5rem 1.5rem;
 }
 
 .app-shell.centered {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: 1.5rem;
 }
 
 .brand {
@@ -267,12 +268,18 @@ input:disabled {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.4rem 0 1rem 0;
+  padding: 0.8rem 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
+  background: rgba(10, 11, 16, 0.78);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
 }
 
 .brand-row {
