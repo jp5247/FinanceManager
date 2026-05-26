@@ -1,6 +1,7 @@
 use crate::adapter::BankAdapter;
 use crate::adapters::hdfc_cc::HdfcCreditCardAdapter;
 use crate::adapters::hdfc_savings::HdfcSavingsAdapter;
+use crate::adapters::sbi_savings::SbiSavingsAdapter;
 use crate::extracted::ExtractedPdf;
 
 /// The default set of adapters shipped with this build. Order matters only
@@ -14,6 +15,7 @@ pub fn default_adapters() -> Vec<Box<dyn BankAdapter + Send + Sync>> {
     vec![
         Box::new(HdfcCreditCardAdapter::new()),
         Box::new(HdfcSavingsAdapter::new()),
+        Box::new(SbiSavingsAdapter::new()),
     ]
 }
 

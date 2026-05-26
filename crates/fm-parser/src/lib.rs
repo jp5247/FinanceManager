@@ -20,6 +20,7 @@ mod registry;
 pub use adapter::{BankAdapter, ParseError};
 pub use adapters::hdfc_cc::HdfcCreditCardAdapter;
 pub use adapters::hdfc_savings::HdfcSavingsAdapter;
+pub use adapters::sbi_savings::SbiSavingsAdapter;
 pub use extracted::{ExtractedPdf, PageText, ParserBackend};
 pub use raw_txn::RawTransaction;
 pub use registry::{default_adapters, detect_adapter};
