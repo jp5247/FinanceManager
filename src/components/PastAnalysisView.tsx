@@ -155,7 +155,17 @@ function PeriodView({ fromMonth, toMonth }: { fromMonth: string; toMonth: string
       </div>
     );
   }
-  return <DashboardLite data={data} />;
+  return (
+    <>
+      {data.undatedCount > 0 && (
+        <div className="dash-transfer-note muted small">
+          {data.undatedCount} row{data.undatedCount === 1 ? "" : "s"} excluded
+          from this range — date couldn't be parsed.
+        </div>
+      )}
+      <DashboardLite data={data} />
+    </>
+  );
 }
 
 function CompareView({ months }: { months: string[] }) {

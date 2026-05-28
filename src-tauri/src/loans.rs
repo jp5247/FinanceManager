@@ -210,23 +210,21 @@ pub fn upsert_loan(spec: UpsertLoanSpec, state: State<AppState>) -> Result<Loan,
         }
     };
 
+    let was_update = spec.id.as_deref().filter(|s| !s.is_empty()).is_some();
     save(&state, &user, &dek, &doc)?;
+    // PII redaction: drop lender (counterparty identity) and all monetary
+    // / rate fields (debt portfolio fingerprint). Keep just the loan type
+    // for audit-trail context.
     crate::audit::record(
         &state,
         &user,
-        if spec.id.as_deref().filter(|s| !s.is_empty()).is_some() {
+        if was_update {
             "update_loan"
         } else {
             "create_loan"
         },
         Some(&loan.id),
-        serde_json::json!({
-            "type": loan.loan_type,
-            "lender": loan.lender,
-            "outstanding": loan.principal_outstanding,
-            "rate": loan.interest_rate,
-            "emi": loan.emi,
-        }),
+        serde_json::json!({ "type": loan.loan_type }),
     );
     Ok(loan)
 }

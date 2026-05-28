@@ -170,13 +170,15 @@ pub fn upload_pdf(
         &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
     )?;
 
+    // PII redaction: skip `sourceFile` (often contains bank name + last-4
+    // account in the filename). The opaque `import_id` already pins
+    // tamper-detection; the counts give the user enough context.
     crate::audit::record(
         &state,
         &user,
         "upload_pdf",
         Some(&import_id),
         serde_json::json!({
-            "sourceFile": extracted.source_file,
             "adapterId": adapter.id(),
             "transactionCount": rows.len(),
             "llmCategorizedCount": lookup.llm_count,
@@ -278,6 +280,10 @@ pub fn recategorize_transaction(
         None
     };
 
+    // PII redaction: drop the rule `pattern` (raw merchant substring) and
+    // keep only the boolean + new-category label. Category names are from
+    // the canonical 26-label set or user-typed Other; raw merchants are
+    // not in this audit payload.
     crate::audit::record(
         &state,
         &user,
@@ -285,7 +291,7 @@ pub fn recategorize_transaction(
         Some(&format!("{import_id}#{row_number}")),
         serde_json::json!({
             "newCategory": if trimmed.is_empty() { "Uncategorized" } else { trimmed },
-            "ruleSaved": rule_saved.as_ref().map(|(p, c)| serde_json::json!({ "pattern": p, "category": c })),
+            "ruleSaved": rule_saved.as_ref().map(|(_, c)| serde_json::json!({ "category": c })),
         }),
     );
 
@@ -329,7 +335,17 @@ pub fn recategorize_import(
     if let Err(e) = invalidate_uncategorized_cache(&state, &user, &dek) {
         eprintln!("merchant cache invalidate failed: {e}");
     }
-    recategorize_one(&state, &user, &dek, &rules, &import_id)
+    let result = recategorize_one(&state, &user, &dek, &rules, &import_id)?;
+    crate::audit::record(
+        &state,
+        &user,
+        "recategorize_import",
+        Some(&import_id),
+        serde_json::json!({
+            "llmCategorizedCount": result.llm_categorized_count,
+        }),
+    );
+    Ok(result)
 }
 
 /// Re-run categorization on every import for the unlocked profile in one

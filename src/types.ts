@@ -121,6 +121,7 @@ export interface DashboardData {
   netSavings: string;
   transferCount: number;
   transferTotal: string;
+  undatedCount: number;
   categoryTotals: CategoryTotal[];
   monthlyTrend: MonthlyBucket[];
   healthScore: HealthScore;

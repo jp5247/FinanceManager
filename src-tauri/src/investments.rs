@@ -148,22 +148,21 @@ pub fn upsert_investment(
         }
     };
 
+    let was_update = spec.id.as_deref().filter(|s| !s.is_empty()).is_some();
     save(&state, &user, &dek, &doc)?;
+    // PII redaction: drop the asset name (often contains broker / fund
+    // identity) and amounts (sensitive portfolio detail). Keep the kind
+    // ("type") so the audit log shows what KIND of edit was made.
     crate::audit::record(
         &state,
         &user,
-        if spec.id.as_deref().filter(|s| !s.is_empty()).is_some() {
+        if was_update {
             "update_investment"
         } else {
             "create_investment"
         },
         Some(&asset.id),
-        serde_json::json!({
-            "type": asset.asset_type,
-            "name": asset.asset_name,
-            "invested": asset.invested_amount,
-            "current": asset.current_value,
-        }),
+        serde_json::json!({ "type": asset.asset_type }),
     );
     Ok(asset)
 }

@@ -276,7 +276,7 @@ Supporting pieces:
 - Inline note when N rows were categorized via Gemini in this run; magenta warning when external lookup failed (the upload itself always succeeds).
 - Previous imports list with click-to-view + delete.
 
-### 10.6 Investments tab (delivers 4.4)
+### 10.7 Investments tab (delivers 4.4)
 - Manual asset positions stored encrypted at `mappings/investments.json` (new `src-tauri/src/investments.rs`). Per-asset fields: id, asset type, asset name, invested amount, current value, last-updated timestamp, optional notes.
 - CRUD via four Tauri commands: `list_investments`, `upsert_investment`, `delete_investment`, `investments_summary`. The upsert command accepts comma-separated Indian-format decimals (e.g. `1,25,000.50`).
 - `InvestmentsView` is the new third tab in `Home`. Shows three summary tiles (Total invested, Current value, Unrealized gain/loss with return %), an allocation breakdown by asset type, and a positions table with edit/delete. Add-asset form with a Custom… escape hatch for asset types beyond the canonical suggestions.
@@ -284,7 +284,7 @@ Supporting pieces:
 - Suggested asset types: Mutual Fund, Stock, FD, RD, PPF, NPS, ELSS, Bond, Gold, Real Estate, Crypto, Other.
 - Tested: 6 unit tests in `investments.rs` cover the summary math, allocation sorting, parse-amount Indian formatting, and edge cases (empty list, zero invested with positive value).
 
-### 10.7 Loan Tracker tab (delivers 4.5)
+### 10.8 Loan Tracker tab (delivers 4.5)
 - Manual loan positions stored encrypted at `mappings/loans.json` (new `src-tauri/src/loans.rs`). Per-loan fields: id, loan type, lender, principal outstanding, interest rate, rate type (Fixed/Floating), remaining tenure (months), EMI, prepayment-penalty %, tax-benefit flag, start date, next due date, optional notes.
 - CRUD via four Tauri commands: `list_loans`, `upsert_loan`, `delete_loan`, `loans_summary`.
 - **Good/bad classification (P6 resolved)**: effective rate = nominal − 2.5pp (when tax-deductible). `≤ 9%` → Good, `≥ 12%` → Bad, in between → Watch. Credit-card debt is hard-coded Bad regardless of teaser rate. Per-loan rationale string surfaced to the UI.
@@ -293,16 +293,16 @@ Supporting pieces:
 - **Dashboard integration**: the Debt-Burden driver is no longer a placeholder. Computed as `1 − (monthly_EMI / monthly_income) / 0.4` (clamped 0–100). 0% EMI → score 100, 20% → 50, 40%+ → 0. Falls back to the neutral 100 only when no loan data is present.
 - Tested: 9 unit tests in `loans.rs` cover empty summary, all three verdicts including the CC special-case, weighted avg rate math, avalanche / snowball ordering, and the tax-shave floor. Plus 3 new dashboard tests pin the new debt-burden driver curve.
 
-### 10.8 Past Analysis tab (delivers 4.3)
+### 10.9 Past Analysis tab (delivers 4.3)
 - `dashboard_aggregate` now accepts optional `from_month` / `to_month` (YYYY-MM). Default behavior unchanged; existing call sites omit the params.
 - New row-in-range filter excludes malformed dates from explicit ranges and is pinned by `row_in_range_inclusive_on_both_ends`.
 - `PastAnalysisView` (5th tab, slotted between Dashboard and Upload) pulls available months from a default aggregate, populates two dropdowns, and renders a lite dashboard for the selected window. Compare-mode renders two months side by side with a deltas table (Income / Expense / Net, colored green when the change is in the user's favor).
 
-### 10.9 Excel export (delivers 4.6)
+### 10.10 Excel export (delivers 4.6)
 - New `rust_xlsxwriter` dep + `src-tauri/src/export.rs::export_to_xlsx`. Writes a single workbook with 5 sheets (Summary, Transactions, Categories, Investments, Loans). Values-only per E4; single-workbook per E3. Header rows formatted with dark background; money columns formatted `#,##0.00`.
 - Frontend `ExportPanel` at the bottom of UploadView. Native Save-As dialog with a date-stamped default filename. Surfaces non-blocking warning when uncategorized rows are present.
 
-### 10.10 Audit-log integration (delivers 5.3, E7 resolved)
+### 10.11 Audit-log integration (delivers 5.3, E7 resolved)
 - `fm-audit` is now wired into the app. New `src-tauri/src/audit.rs` exposes a `record(state, user, action, entity_id, details)` helper and an `audit_log` Tauri command for the viewer.
 - Storage: per-profile **plaintext** JSONL at `audit/log.jsonl` — deliberately unsealed so the chain can be verified without unlocking the profile. Each line is hash-chained.
 - Audit-write call sites (best-effort — errors swallowed to stderr so a missing audit file never blocks a user action):
@@ -317,7 +317,7 @@ Supporting pieces:
 - Read-side: `audit_log` Tauri command returns entries newest-first plus `chainOk` + `chainNote` (set when `fm_audit::verify_chain` rejects).
 - Frontend `AuditPanel` in UploadView shows the last 10 entries by default with a "Show all N" toggle, expandable JSON details per row, and a red warning banner if the chain is broken.
 
-### 10.11 Phase 1 — Definition of done
+### 10.12 Phase 1 — Definition of done
 All Section 8 DoD items now have shipped implementations:
 - ✅ Upload PDF + flag resolution (Sections 10.3, 10.4, 10.5, 10.6)
 - ✅ Dashboard accurate (Section 10.5)
@@ -380,6 +380,11 @@ Single home for product, UX, and engineering decisions that have been raised but
 | E24 | Tighten `parse_amount` in `investments.rs` to reject European decimal format / mixed separators rather than silently stripping all commas? | Status quo (lenient); add only if a user reports confusion |
 | E25 | Auto-refresh Dashboard's Wealth Snapshot when the Investments tab mutates state (Tauri event emit, or shared store)? | Status quo (manual Refresh button); revisit if it confuses users |
 | U5 | Add a confirmation prompt before retroactive recategorize from the drill view? | No prompt; "Save as a rule" label already conveys it. Revisit if real users get surprised |
+| E26 | Refetch `useAvailableMonths` in Past Analysis on profile lock/unlock (or via a shared profile-version atom) so a multi-profile-per-session flow doesn't see stale month lists. | Defer — single-profile-per-session is the current reality |
+| E27 | Validate Excel-export `file_path` ends in `.xlsx` and lives outside the profile root in the Rust command (defence-in-depth on top of the native Save-As dialog). | Defer — file dialog is the trust boundary; user-chosen path |
+| E28 | Surface an in-app counter of `audit_write_failures` on the AuditPanel when nonzero. Today errors go to stderr only. | Defer — `eprintln!` is acceptable until users hit it |
+| E29 | Re-open the "plaintext audit log" decision — seal under DEK, or keep plaintext + strict PII-redaction discipline at every call site? | Plaintext + redaction (already implemented via Phase-1 finishing audit fix B1) |
+| E30 | Align Decimal-parse error handling between `loans.rs::summarise` (`expect`) and the avalanche/snowball sort sites (`unwrap_or`). Both are safe given the normalise-on-write invariant but the inconsistency is brittle. | Defer — no behaviour change, cosmetic |
 
 ### 11.4 Resolved (recent)
 
@@ -412,6 +417,10 @@ Single home for product, UX, and engineering decisions that have been raised but
 | ~~Drill U3~~ | Category chip buttons in the drill modal are disabled while a retroactive re-categorize is in flight, preventing the user from firing parallel recategorizations during the ~200ms window. | (this commit) |
 | ~~Trend negative-OUT bug + refund double-count~~ | Monthly expense could go negative when refunds on expense-categorized rows dominated debits in that month. First fix routed credits-on-expense to income, which solved the visual bug but introduced an accounting flaw — a refund of a previous purchase counted as new income, double-counting the originating salary. **Final fix**: aggregate per `(month, category)` and per category overall, then compute `expense = max(0, debit − credit)`. Refunds reduce that category's expense (never below zero) and the excess credit (if any) is silently dropped rather than become income. Same rule applies to investment-kind rows: payouts net against the same category's outflow, never become income. Pinned by `refund_nets_against_same_category_does_not_become_income` and `refunds_exceeding_debits_floor_expense_at_zero_never_become_income`. Bar widths additionally `clampPct`ed to `[0, 100]` as defense-in-depth. | (this commit) |
 | ~~Headline ≠ sum of monthly~~ | After the per-category clamp landed, the overview tiles (₹3,69,888 expense) didn't equal the sum of monthly trend bars (₹4,08,110) — a ~₹38k gap caused by refunds that landed in a different month from the original purchase. Headline now derived directly from `by_month` so the trend always adds up to the overview. Rows with malformed dates are bucketed under a sentinel `__undated__` key that's included in headline sums but filtered out of the trend view, preserving the `monthly_trend_skips_malformed_dates` contract. Pinned by `headline_totals_equal_sum_of_monthly_buckets`. | (this commit) |
+| ~~Audit B1 / B4~~ | Phase-1 finishing audit must-fixes — (1) `AUDIT_WRITE_LOCK` serializes all `audit::record` calls process-wide so concurrent appends can't tear the chain; (2) PII redaction at every `record` call site (drop `sourceFile`, lender, asset name, amounts, raw rule patterns; keep opaque entity ids + non-PII metadata). Pinned by `concurrent_audit_writes_produce_a_valid_chain` (4 threads × 25 appends each → `verify_chain` accepts all 100 entries). | (Phase-1 audit fixes) |
+| ~~Audit A1~~ | Three missing audit-write sites added: `set_llm_config`, `delete_user_rule`, `recategorize_import`. | (Phase-1 audit fixes) |
+| ~~Audit A3~~ | `DashboardData.undated_count` exposes rows with unparseable `txn_date`; Past Analysis surfaces a banner when nonzero so users know the filtered slice is partial. | (Phase-1 audit fixes) |
+| ~~Audit A2 / A6~~ | Section 10 sub-numbering deduped (had two `10.6` headers); `audit.rs` module doc updated to accurately describe the "plaintext for verify-without-unlocking but read command still gates on session" reality + the new PII-redaction policy. | (Phase-1 audit fixes) |
 | ~~E7~~ | Hash-chained audit-log surfaced in UI — Implemented via `audit::record` at every mutation site (upload, recategorize, delete_import, reset_categorizations, investment/loan CRUD) + `AuditPanel` in UploadView showing newest entries first with chain-integrity status. Per-profile plaintext JSONL at `audit/log.jsonl`. | (Audit slice) |
 | ~~P6~~ | Loan classification criteria — **net effective borrowing cost** with a 2.5pp shave for tax-deductible loans (home, education). Thresholds: `≤ 9% Good / 9–12% Watch / ≥ 12% Bad`. Credit-card debt is always Bad regardless of nominal rate. Per-loan rationale strings make the call traceable. Implemented in `loans.rs::classify`. | (Loan Tracker commit) |
 | ~~P2~~ | Reimbursements (split) — handled via a new `Split` canonical category in the expense kind. Per-category clamp nets reimbursement credits against the initial debit (capped at zero), so fully-settled splits silently drop and partial settlements leave the user's true share as expense. No explicit "pending settlement" flag needed — the data shape is self-balancing as reimbursement rows come in over future statements. | (this commit) |

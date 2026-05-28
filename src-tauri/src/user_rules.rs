@@ -53,6 +53,15 @@ pub fn delete_user_rule(
         return Err(format!("rule {rule_id} not found"));
     }
     save_rules(&state, &user, &dek, &doc)?;
+    // Opaque entity id; no rule body in details (pattern is raw merchant
+    // string — PII per the audit-redaction policy).
+    crate::audit::record(
+        &state,
+        &user,
+        "delete_user_rule",
+        Some(&rule_id),
+        serde_json::Value::Null,
+    );
     Ok(doc.rules)
 }
 

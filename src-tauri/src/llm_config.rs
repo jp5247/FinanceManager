@@ -82,6 +82,13 @@ pub fn set_llm_config(
 ) -> Result<LlmConfigView, String> {
     let (user, dek) = crate::upload::session(&state)?;
     let mut cfg = load(&state, &user, &dek)?;
+    // Capture change-flags up front so the audit payload survives the
+    // moves below.
+    let enabled_changed = update.enabled.is_some();
+    let model_changed = update.model.is_some();
+    let api_key_changed = update.api_key.is_some();
+    let api_key_cleared = matches!(update.api_key.as_deref(), Some(""));
+
     if let Some(e) = update.enabled {
         cfg.enabled = e;
     }
@@ -95,6 +102,21 @@ pub fn set_llm_config(
         cfg.api_key = k;
     }
     save(&state, &user, &dek, &cfg)?;
+    // Audit which fields changed — never the key value itself.
+    crate::audit::record(
+        &state,
+        &user,
+        "set_llm_config",
+        None,
+        serde_json::json!({
+            "enabledChanged": enabled_changed,
+            "enabled": cfg.enabled,
+            "modelChanged": model_changed,
+            "model": cfg.model,
+            "apiKeyChanged": api_key_changed,
+            "apiKeyCleared": api_key_cleared,
+        }),
+    );
     Ok(to_view(&cfg))
 }
 

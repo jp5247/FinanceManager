@@ -493,3 +493,38 @@ fn write_loans_sheet(
 fn decimal_to_f64(s: &str) -> f64 {
     s.trim().replace(',', "").parse::<f64>().unwrap_or(0.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `decimal_to_f64` is the silent-failure path for every numeric cell
+    /// in the export — flagged in the Phase-1 finishing audit as a risk
+    /// because a malformed Decimal string silently writes 0.00. Test that:
+    /// 1) it round-trips canonical decimal strings,
+    /// 2) it strips Indian-format commas,
+    /// 3) garbage explicitly hits the 0.0 fallback (so a future change
+    ///    that decides to bubble the error instead is detected).
+    #[test]
+    fn decimal_to_f64_round_trips_canonical_strings() {
+        assert!((decimal_to_f64("1234.56") - 1234.56).abs() < 0.0001);
+        assert!((decimal_to_f64("0.00") - 0.0).abs() < 0.0001);
+        assert!((decimal_to_f64("-99.99") + 99.99).abs() < 0.0001);
+    }
+
+    #[test]
+    fn decimal_to_f64_strips_indian_format_commas() {
+        assert!((decimal_to_f64("1,25,000.50") - 125000.50).abs() < 0.001);
+        assert!((decimal_to_f64("47,500.00") - 47500.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn decimal_to_f64_silent_zero_on_garbage() {
+        // Documented silent-failure behaviour. If this assertion ever
+        // flips, downstream cells in the Excel export start writing 0.00
+        // instead of failing loudly — make sure we know we're changing
+        // contract.
+        assert_eq!(decimal_to_f64("not a number"), 0.0);
+        assert_eq!(decimal_to_f64(""), 0.0);
+    }
+}
