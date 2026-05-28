@@ -300,7 +300,8 @@ Supporting pieces:
 
 ### 10.10 Excel export (delivers 4.6)
 - New `rust_xlsxwriter` dep + `src-tauri/src/export.rs::export_to_xlsx`. Writes a single workbook with 5 sheets (Summary, Transactions, Categories, Investments, Loans). Values-only per E4; single-workbook per E3. Header rows formatted with dark background; money columns formatted `#,##0.00`.
-- Frontend `ExportPanel` at the bottom of UploadView. Native Save-As dialog with a date-stamped default filename. Surfaces non-blocking warning when uncategorized rows are present.
+- **Selective export**: the Tauri command accepts an optional `import_ids: Vec<String>`. When provided, only transactions from those imports feed the Transactions / Categories / Summary cash-flow sheets — Summary's `Filtered: N of M uploaded statements included` line surfaces the filter. Investments and Loans always reflect the full profile (they're not per-statement). Backed by `dashboard::summarise_rows` exposed as `pub(crate)` so the export can compute the filtered slice without duplicating logic.
+- Frontend `ExportPanel` at the bottom of UploadView. Lists every uploaded statement with a checkbox (default: all selected), Select-all / Select-none toggle, and the same Save-As dialog. Disables the Export button when no statement is selected. Non-blocking warning still surfaces when uncategorized rows are present.
 
 ### 10.11 Audit-log integration (delivers 5.3, E7 resolved)
 - `fm-audit` is now wired into the app. New `src-tauri/src/audit.rs` exposes a `record(state, user, action, entity_id, details)` helper and an `audit_log` Tauri command for the viewer.

@@ -244,7 +244,7 @@ fn row_in_range(txn_date: &str, from: Option<&str>, to: Option<&str>) -> bool {
     true
 }
 
-fn summarise_rows(
+pub(crate) fn summarise_rows(
     import_count: u32,
     rows: &[RawTransaction],
     total_monthly_emi: Option<Decimal>,

@@ -107,8 +107,15 @@ export const deleteLoan = (id: string): Promise<void> =>
 export const loansSummary = (): Promise<LoansSummary> =>
   invoke<LoansSummary>("loans_summary");
 
-export const exportToXlsx = (filePath: string): Promise<ExportResult> =>
-  invoke<ExportResult>("export_to_xlsx", { filePath });
+export const exportToXlsx = (
+  filePath: string,
+  /** `null` or empty array exports every uploaded statement. */
+  importIds?: string[] | null,
+): Promise<ExportResult> =>
+  invoke<ExportResult>("export_to_xlsx", {
+    filePath,
+    importIds: importIds && importIds.length > 0 ? importIds : null,
+  });
 
 export const auditLog = (): Promise<AuditLogView> =>
   invoke<AuditLogView>("audit_log");

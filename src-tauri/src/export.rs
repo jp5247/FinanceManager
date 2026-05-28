@@ -13,17 +13,18 @@
 //! `ExportResult.warning`) but the export still runs so the user always
 //! has an escape hatch.
 
-use crate::dashboard::{dashboard_aggregate, DashboardData};
+use crate::dashboard::{summarise_rows, DashboardData};
 use crate::investments;
 use crate::loans;
 use crate::state::AppState;
-use crate::upload::{list_imports_internal, session};
+use crate::upload::{list_imports_internal, session, FileMeta};
 use fm_core::UserId;
 use fm_crypto::{open, KeyBytes};
 use fm_parser::RawTransaction;
 use fm_storage::{StorageRepository, VersionedJson};
 use rust_xlsxwriter::{Color, Format, FormatBorder, Workbook};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 use tauri::State;
 
@@ -43,15 +44,46 @@ pub struct ExportResult {
     pub warning: Option<String>,
 }
 
+/// Export the unlocked profile's data to an .xlsx workbook.
+///
+/// `import_ids`: `None` (or an empty Vec) → export every uploaded
+/// statement. Otherwise only transactions from the listed import IDs
+/// feed the Transactions, Categories, and Summary cash-flow sheets.
+/// Investments + Loans always reflect everything (they're profile-level,
+/// not per-statement).
 #[tauri::command]
-pub fn export_to_xlsx(file_path: String, state: State<AppState>) -> Result<ExportResult, String> {
+pub fn export_to_xlsx(
+    file_path: String,
+    import_ids: Option<Vec<String>>,
+    state: State<AppState>,
+) -> Result<ExportResult, String> {
     let (user, dek) = session(&state)?;
 
-    let dashboard = dashboard_aggregate(state.clone(), None, None)?;
-    let txns = load_all_transactions(&state, &user, &dek)?;
+    let all_imports = list_imports_internal(&state, &user, &dek)?;
+    let selected_ids: Option<HashSet<String>> = match import_ids {
+        Some(v) if !v.is_empty() => Some(v.into_iter().collect()),
+        _ => None,
+    };
+
+    let imports_for_export: Vec<&FileMeta> = match &selected_ids {
+        Some(set) => all_imports
+            .iter()
+            .filter(|m| set.contains(&m.import_id))
+            .collect(),
+        None => all_imports.iter().collect(),
+    };
+    let imports_in_export = imports_for_export.len() as u32;
+
+    let txns = load_transactions_for(&state, &user, &dek, &imports_for_export)?;
     let assets = investments::list_investments(state.clone())?;
     let loans_summary = loans::loans_summary(state.clone())?;
     let loans_list = loans::list_loans(state.clone())?;
+
+    // Filtered dashboard: cash-flow numbers + categories + health score
+    // reflect only the selected imports. EMI side-input is the full
+    // profile so debt-burden stays anchored.
+    let total_monthly_emi = loans::total_monthly_emi(&state, &user, &dek).ok();
+    let dashboard = summarise_rows(imports_in_export, &txns, total_monthly_emi);
 
     let uncategorized = txns
         .iter()
@@ -63,8 +95,23 @@ pub fn export_to_xlsx(file_path: String, state: State<AppState>) -> Result<Expor
         })
         .count() as u32;
 
+    let filter_note = selected_ids.as_ref().map(|_| {
+        format!(
+            "Filtered: {} of {} uploaded statement{} included",
+            imports_in_export,
+            all_imports.len(),
+            if all_imports.len() == 1 { "" } else { "s" }
+        )
+    });
+
     let mut book = Workbook::new();
-    write_summary_sheet(&mut book, &dashboard, &assets, &loans_summary)?;
+    write_summary_sheet(
+        &mut book,
+        &dashboard,
+        &assets,
+        &loans_summary,
+        filter_note.as_deref(),
+    )?;
     write_transactions_sheet(&mut book, &txns)?;
     write_categories_sheet(&mut book, &dashboard)?;
     write_investments_sheet(&mut book, &assets)?;
@@ -92,12 +139,12 @@ pub fn export_to_xlsx(file_path: String, state: State<AppState>) -> Result<Expor
     })
 }
 
-fn load_all_transactions(
+fn load_transactions_for(
     state: &State<AppState>,
     user: &UserId,
     dek: &KeyBytes,
+    imports: &[&FileMeta],
 ) -> Result<Vec<RawTransaction>, String> {
-    let imports = list_imports_internal(state, user, dek)?;
     let mut out = Vec::new();
     for m in imports {
         let rel = format!(
@@ -159,6 +206,7 @@ fn write_summary_sheet(
     d: &DashboardData,
     assets: &[crate::investments::InvestmentAsset],
     loans: &crate::loans::LoansSummary,
+    filter_note: Option<&str>,
 ) -> Result<(), String> {
     let ws = book
         .add_worksheet()
@@ -175,7 +223,12 @@ fn write_summary_sheet(
         &label_format().clone().set_font_size(14),
     )
     .map_err(|e| e.to_string())?;
-    row += 2;
+    row += 1;
+    if let Some(note) = filter_note {
+        ws.write(row, 0, note).map_err(|e| e.to_string())?;
+        row += 1;
+    }
+    row += 1;
 
     ws.write_with_format(row, 0, "Cash flow (all uploaded periods)", &label)
         .map_err(|e| e.to_string())?;

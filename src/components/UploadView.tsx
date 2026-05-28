@@ -792,13 +792,46 @@ function AuditPanel() {
 }
 
 function ExportPanel() {
+  const [imports, setImports] = useState<FileMeta[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Load + default-select all imports on mount. Re-running this on every
+  // mount keeps the list fresh after a new upload without needing a
+  // cross-component event bus.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const list = await listImports();
+        setImports(list);
+        setSelected(new Set(list.map((m) => m.importId)));
+      } catch (e) {
+        setError(String(e));
+      }
+    })();
+  }, []);
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => setSelected(new Set(imports.map((m) => m.importId)));
+  const selectNone = () => setSelected(new Set());
+
   const run = async () => {
     setError(null);
     setResult(null);
+    if (selected.size === 0) {
+      setError("Select at least one statement to export.");
+      return;
+    }
     try {
       const now = new Date();
       const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
@@ -808,7 +841,9 @@ function ExportPanel() {
       });
       if (!target) return;
       setBusy(true);
-      const r = await exportToXlsx(target);
+      const idsToSend =
+        selected.size === imports.length ? null : Array.from(selected);
+      const r = await exportToXlsx(target, idsToSend);
       const lines = [
         `Saved to ${r.filePath}.`,
         `${r.transactionCount} transactions · ${r.investmentCount} assets · ${r.loanCount} loans.`,
@@ -822,19 +857,66 @@ function ExportPanel() {
     }
   };
 
+  const allSelected = imports.length > 0 && selected.size === imports.length;
+
   return (
     <div className="card">
       <h3>Export to Excel</h3>
       <p className="muted small">
         One workbook with sheets for Summary, Transactions, Categories,
-        Investments, and Loans. Values-only — no formulas. Uncategorized
-        rows are flagged but don't block the export.
+        Investments, and Loans. Values-only — no formulas. Pick which
+        uploaded statements feed the Transactions / Categories / Summary
+        sheets; Investments and Loans always reflect everything.
       </p>
+
+      {imports.length === 0 ? (
+        <p className="muted small">No statements uploaded yet — nothing to export.</p>
+      ) : (
+        <>
+          <div className="export-select-controls">
+            <span className="muted xsmall">
+              {selected.size} of {imports.length} selected
+            </span>
+            <button
+              type="button"
+              className="btn btn-link inline"
+              onClick={allSelected ? selectNone : selectAll}
+            >
+              {allSelected ? "Select none" : "Select all"}
+            </button>
+          </div>
+          <ul className="export-import-list">
+            {imports.map((m) => {
+              const checked = selected.has(m.importId);
+              return (
+                <li key={m.importId}>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(m.importId)}
+                      disabled={busy}
+                    />
+                    <span className="export-import-meta">
+                      <span>{m.sourceFile}</span>
+                      <span className="muted xsmall">
+                        {m.transactionCount} txns · {m.adapterId}@{m.adapterVersion} ·{" "}
+                        {m.uploadedAt.slice(0, 10)}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
       <button
         type="button"
         className="btn btn-primary btn-sm"
         onClick={() => void run()}
-        disabled={busy}
+        disabled={busy || imports.length === 0 || selected.size === 0}
       >
         {busy ? "Exporting…" : "Export now"}
       </button>
