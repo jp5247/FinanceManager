@@ -195,6 +195,7 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
     struct MonthAcc {
         income: Decimal,
         expense: Decimal,
+        investment: Decimal,
     }
     let mut by_month: HashMap<String, MonthAcc> = HashMap::new();
     let mut essential_spend = Decimal::ZERO;
@@ -256,6 +257,17 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
                     transfer_count += 1;
                 }
             }
+            CategoryKind::Investment => {
+                // Investment kind is debit-leaning: SIPs, lump sums, PPF
+                // contributions. Credit-side flows (redemptions, dividend
+                // reinvestment) net against the same month's investment
+                // outflow; this is fine until the Investments tab ships
+                // and we can model the asset side properly.
+                let row_invest = debit - credit;
+                if let Some(k) = month_key.as_deref() {
+                    by_month.entry(k.to_string()).or_default().investment += row_invest;
+                }
+            }
         }
     }
 
@@ -291,6 +303,15 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         })
         .collect();
 
+    // Count months where the user made an investment outflow before
+    // consuming `by_month` for monthly_trend — drives the
+    // investment-consistency health driver.
+    let months_with_investment = by_month
+        .values()
+        .filter(|m| m.investment > Decimal::ZERO)
+        .count() as u32;
+    let total_months = by_month.len() as u32;
+
     let mut monthly_trend: Vec<MonthlyBucket> = by_month
         .into_iter()
         .map(|(month, acc)| MonthlyBucket {
@@ -301,8 +322,13 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         })
         .collect();
     monthly_trend.sort_by(|a, b| a.month.cmp(&b.month));
-
-    let health_score = compute_health_score(income, expense, essential_spend);
+    let health_score = compute_health_score(
+        income,
+        expense,
+        essential_spend,
+        months_with_investment,
+        total_months,
+    );
     // Recommendations consume Decimals directly — never the formatted
     // category_totals — so trim math stays exact (regression of F-INF-3).
     let months_in_period = monthly_trend.len().max(1) as u32;
@@ -351,24 +377,32 @@ fn parse_iso_month(date: &str) -> Option<&str> {
 
 /// "Essential" — recurring needs that are hard to compress without a
 /// lifestyle change. Used for the essential-vs-discretionary driver of the
-/// financial-health score and for tilting recommendations.
+/// financial-health score and for tilting recommendations. Matches
+/// case-insensitively and recognises common user-coined labels (e.g.
+/// `"Loans"` for `"Loan EMI"`, `"Food"` for groceries-leaning home food).
 fn is_essential(category: &str) -> bool {
+    let n = category.trim().to_lowercase();
     matches!(
-        category,
-        "Rent"
-            | "Electricity"
-            | "Gas"
-            | "Water"
-            | "Mobile"
-            | "Internet"
-            | "Groceries"
-            | "Maintenance"
-            | "Insurance"
-            | "Bills"
-            | "Loan EMI"
-            | "Tax"
-            | "Train Travel"
-            | "Fuel"
+        n.as_str(),
+        "rent"
+            | "electricity"
+            | "gas"
+            | "water"
+            | "mobile"
+            | "internet"
+            | "groceries"
+            | "food"
+            | "meals"
+            | "maintenance"
+            | "insurance"
+            | "bills"
+            | "loan emi"
+            | "loans"
+            | "emi"
+            | "tax"
+            | "taxes"
+            | "train travel"
+            | "fuel"
     )
 }
 
@@ -377,15 +411,21 @@ fn is_essential(category: &str) -> bool {
 /// Weights: 40% savings rate, 25% debt burden, 20% essential vs
 /// discretionary, 15% investment consistency.
 ///
-/// In v1, only the savings-rate and essential-vs-discretionary drivers have
-/// real data. Debt-burden and investment-consistency surface as "no signal
-/// yet — defaults" placeholders that update when the Loan Tracker and
-/// Investment Inputs tabs ship.
-fn compute_health_score(income: Decimal, expense: Decimal, essential: Decimal) -> HealthScore {
+/// Savings rate, essential-vs-discretionary, and investment consistency are
+/// driven by real data. Debt burden remains a placeholder (100) until the
+/// Loan Tracker tab ships.
+fn compute_health_score(
+    income: Decimal,
+    expense: Decimal,
+    essential: Decimal,
+    months_with_investment: u32,
+    total_months: u32,
+) -> HealthScore {
     let savings_rate_score = savings_rate_score(income, expense);
     let debt_burden_score = 100u32; // No loan data yet → assume no debt drag.
     let ess_disc_score = essential_vs_discretionary_score(expense, essential);
-    let invest_consistency_score = 50u32; // No investment data yet → neutral.
+    let invest_consistency_score =
+        investment_consistency_score(months_with_investment, total_months);
 
     let weights = [
         ("savingsRate", "Savings rate", savings_rate_score, 0.40f32),
@@ -440,9 +480,13 @@ fn driver_detail(key: &str, score: u32) -> String {
             40..=69 => "Balanced mix.".into(),
             _ => "Mostly essentials — little discretionary fat to cut.".into(),
         },
-        "investmentConsistency" => {
-            "No investment data yet — add SIPs in the Investments tab for a real score.".into()
-        }
+        "investmentConsistency" => match score {
+            0 => "No investment outflows detected. Categories like 'SIP', 'Mutual Fund', 'Investments', 'PPF', 'NPS' count toward this.".into(),
+            1..=33 => "Investing in fewer than 1 in 3 months — consider a fixed monthly SIP.".into(),
+            34..=66 => "Investing in some months but not all. A standing SIP keeps this consistent.".into(),
+            67..=99 => "Investing most months — close to a perfect SIP cadence.".into(),
+            _ => "Investing every month tracked. Strong consistency.".into(),
+        },
         _ => String::new(),
     }
 }
@@ -459,6 +503,17 @@ fn savings_rate_score(income: Decimal, expense: Decimal) -> u32 {
     // 50%+ savings → full marks; linearly scale below.
     let s = (ratio_f / 0.5).clamp(0.0, 1.0) * 100.0;
     s.round() as u32
+}
+
+/// Fraction of months in the period where the user made at least one
+/// investment outflow. Zero data → neutral placeholder so first-time users
+/// don't see a punitive 0.
+fn investment_consistency_score(months_with_investment: u32, total_months: u32) -> u32 {
+    if total_months == 0 {
+        return 50;
+    }
+    let ratio = (months_with_investment as f32) / (total_months as f32);
+    (ratio * 100.0).round().clamp(0.0, 100.0) as u32
 }
 
 fn essential_vs_discretionary_score(expense: Decimal, essential: Decimal) -> u32 {
@@ -560,13 +615,21 @@ fn build_recommendations(
         });
     }
 
-    // Investments tab not built yet — nudge.
-    out.push(Recommendation {
-        kind: "wealth-building",
-        title: "Add your investments for a real score".into(),
-        detail: "The investment-consistency driver is currently a placeholder. Add your SIPs / lump-sums in the Investments tab (coming soon) for accurate wealth tracking.".into(),
-        monthly_impact: None,
-    });
+    // Closing investment nudge — only fires when no investment outflow has
+    // been detected at all. Once the user starts SIPs (or labels a row as
+    // SIP / Mutual Fund / Investments), the consistency driver carries the
+    // signal and this generic nudge would be redundant.
+    let has_investments = sorted
+        .iter()
+        .any(|(_, debit, _, kind)| *kind == CategoryKind::Investment && *debit > Decimal::ZERO);
+    if !has_investments {
+        out.push(Recommendation {
+            kind: "wealth-building",
+            title: "Start tracking investments".into(),
+            detail: "No investment outflows seen yet. Categorize SIPs, mutual-fund purchases, PPF/NPS contributions, or fixed deposits under labels like 'SIP', 'Mutual Fund', 'Investments', 'PPF', or 'NPS' to feed the investment-consistency driver of the health score.".into(),
+            monthly_impact: None,
+        });
+    }
 
     out
 }
@@ -576,6 +639,11 @@ enum CategoryKind {
     Income,
     Expense,
     Transfer,
+    /// Wealth-building outflow — SIPs, mutual funds, fixed deposits, etc.
+    /// Cash leaves the primary account but goes into an asset, so it does
+    /// not count toward "money leakage" (expense) and it drives the
+    /// investment-consistency driver of the health score.
+    Investment,
 }
 
 impl CategoryKind {
@@ -584,20 +652,54 @@ impl CategoryKind {
             CategoryKind::Income => "income",
             CategoryKind::Expense => "expense",
             CategoryKind::Transfer => "transfer",
+            CategoryKind::Investment => "investment",
         }
     }
 }
 
-/// Classify a category label into income / expense / transfer for headline
-/// aggregation. Anything not explicitly income or transfer is treated as
-/// expense (the conservative direction for "money leakage" surfacing).
+/// Classify a category label into income / expense / transfer / investment.
+///
+/// Comparison is case-insensitive and synonym-aware so user-created labels
+/// like `"SIP"`, `"Loans"`, or `"Food"` reach the right kind without
+/// forcing the user to discover the canonical name. Anything unrecognized
+/// falls through to expense (the conservative direction for "leakage").
 fn classify_category(category: &str) -> CategoryKind {
-    match category {
-        "Salary" | "Dividend" | "Interest" | "Refund" => CategoryKind::Income,
-        // P3: own-account moves don't change net worth, so they're neither.
-        "Credit Card Payment" | "Bank Transfer" => CategoryKind::Transfer,
-        _ => CategoryKind::Expense,
+    let n = category.trim().to_lowercase();
+    if matches!(
+        n.as_str(),
+        "salary" | "dividend" | "interest" | "refund" | "bonus" | "cashback"
+    ) {
+        return CategoryKind::Income;
     }
+    // P3: own-account moves don't change net worth, so they're neither.
+    if matches!(
+        n.as_str(),
+        "credit card payment" | "cc payment" | "bank transfer"
+    ) {
+        return CategoryKind::Transfer;
+    }
+    if matches!(
+        n.as_str(),
+        "investments"
+            | "investment"
+            | "sip"
+            | "sips"
+            | "mutual fund"
+            | "mutual funds"
+            | "mf"
+            | "elss"
+            | "ppf"
+            | "nps"
+            | "equity"
+            | "stocks"
+            | "fixed deposit"
+            | "fd"
+            | "recurring deposit"
+            | "rd"
+    ) {
+        return CategoryKind::Investment;
+    }
+    CategoryKind::Expense
 }
 
 fn txn_path(import_id: &str) -> String {
@@ -656,6 +758,75 @@ mod tests {
         assert_eq!(classify_category("ATM / Cash"), CategoryKind::Expense);
         assert_eq!(classify_category("Groceries"), CategoryKind::Expense);
         assert_eq!(classify_category("Uncategorized"), CategoryKind::Expense);
+    }
+
+    #[test]
+    fn classify_recognises_investment_synonyms() {
+        assert_eq!(classify_category("SIP"), CategoryKind::Investment);
+        assert_eq!(classify_category("sip"), CategoryKind::Investment);
+        assert_eq!(classify_category("Mutual Fund"), CategoryKind::Investment);
+        assert_eq!(classify_category("PPF"), CategoryKind::Investment);
+        assert_eq!(classify_category("ELSS"), CategoryKind::Investment);
+        assert_eq!(classify_category("Investments"), CategoryKind::Investment);
+        assert_eq!(classify_category("Equity"), CategoryKind::Investment);
+        assert_eq!(classify_category("Fixed Deposit"), CategoryKind::Investment);
+        assert_eq!(classify_category("FD"), CategoryKind::Investment);
+    }
+
+    #[test]
+    fn is_essential_recognises_user_synonyms() {
+        assert!(is_essential("Rent"));
+        assert!(is_essential("rent"));
+        assert!(is_essential("Loans"));
+        assert!(is_essential("Loan EMI"));
+        assert!(is_essential("EMI"));
+        assert!(is_essential("Food"));
+        assert!(is_essential("Groceries"));
+        assert!(!is_essential("Restaurants"));
+        assert!(!is_essential("SIP"));
+    }
+
+    #[test]
+    fn investments_are_excluded_from_expense_and_drive_consistency() {
+        let rows = vec![
+            row("2026-03-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-03-15", "SIP", "SIP", Some("10000.00"), None),
+            row("2026-04-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-04-15", "SIP", "SIP", Some("10000.00"), None),
+            row("2026-05-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-05-15", "SIP", "Mutual Fund", Some("10000.00"), None),
+        ];
+        let d = summarise_rows(1, &rows);
+        assert_eq!(d.total_expense, "0.00");
+        let inv = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "investmentConsistency")
+            .unwrap();
+        assert_eq!(inv.score, 100);
+    }
+
+    #[test]
+    fn investment_consistency_falls_when_user_skips_months() {
+        let rows = vec![
+            row("2026-02-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-02-15", "X", "Groceries", Some("5000.00"), None),
+            row("2026-03-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-03-15", "SIP", "SIP", Some("10000.00"), None),
+            row("2026-04-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-04-15", "X", "Groceries", Some("5000.00"), None),
+            row("2026-05-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-05-15", "SIP", "SIP", Some("10000.00"), None),
+        ];
+        let d = summarise_rows(1, &rows);
+        let inv = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "investmentConsistency")
+            .unwrap();
+        assert_eq!(inv.score, 50);
     }
 
     #[test]
@@ -789,11 +960,13 @@ mod tests {
 
     #[test]
     fn health_score_high_when_savings_rate_strong() {
-        // ₹100k income, ₹30k expense (70% saved, all essentials) → strong score.
+        // ₹100k income, ₹30k expense (70% saved, all essentials), plus a SIP
+        // in the only tracked month → strong composite across all four drivers.
         let rows = vec![
             row("2026-04-01", "S", "Salary", None, Some("100000.00")),
             row("2026-04-10", "X", "Rent", Some("20000.00"), None),
             row("2026-04-15", "X", "Groceries", Some("10000.00"), None),
+            row("2026-04-20", "X", "SIP", Some("10000.00"), None),
         ];
         let d = summarise_rows(1, &rows);
         // 70% rate clamped against the 50%-cap → savings driver = 100.
@@ -812,8 +985,16 @@ mod tests {
             .find(|x| x.key == "essentialDiscretionary")
             .unwrap();
         assert_eq!(ed.score, 100);
-        // Composite weighted: 100*0.4 + 100*0.25 + 100*0.20 + 50*0.15 = 92.5 → 93.
-        assert_eq!(d.health_score.composite, 93);
+        // 1 month with investment / 1 total month → 100.
+        let inv = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "investmentConsistency")
+            .unwrap();
+        assert_eq!(inv.score, 100);
+        // Composite weighted: 100*0.4 + 100*0.25 + 100*0.20 + 100*0.15 = 100.
+        assert_eq!(d.health_score.composite, 100);
     }
 
     #[test]

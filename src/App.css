@@ -1222,6 +1222,15 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- Investment breakdown row (Dashboard "Wealth-building" section) --- */
+.bk-bar-fill.investment {
+  background: linear-gradient(90deg, rgba(80, 200, 255, 0.65), rgba(80, 200, 255, 0.95));
+}
+
+.bk-amount.investment {
+  color: rgba(80, 200, 255, 0.95);
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {

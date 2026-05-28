@@ -107,7 +107,7 @@ export interface CategoryTotal {
   count: number;
   totalDebit: string;
   totalCredit: string;
-  /** `"income" | "expense" | "transfer"` */
+  /** `"income" | "expense" | "transfer" | "investment"` */
   kind: string;
 }
 

@@ -250,8 +250,14 @@ Supporting pieces:
 - Empty-state handling: until the user uploads a statement, the tab shows a "no statements yet" card pointing them to the Upload tab.
 - **Monthly trend** (4.1.3): per-`YYYY-MM` bucketing of income vs expense, rendered as paired bars + a net-flow chip per month.
 - **Financial-health strip** (4.1.4): composite score 0–100 weighted per P5 (40% savings rate / 25% debt burden / 20% essential vs discretionary / 15% investment consistency). Each driver shows score + weight + one-line explainer + colored bar. Tone color (green / amber / red) on the strip's left border indicates overall health.
-  - Real drivers in v1: savings rate (capped at the 50% sweet spot for full marks) and essential-vs-discretionary (ratio of essential-category spend to total expense).
-  - Placeholder drivers: debt burden defaults to 100 (no loan data yet) and investment consistency defaults to 50 (neutral, no investment data). Both display an explainer indicating they'll sharpen up when Loan Tracker / Investment Inputs ship.
+  - Real drivers in v1: savings rate (capped at the 50% sweet spot for full marks), essential-vs-discretionary (ratio of essential-category spend to total expense), and **investment consistency** (fraction of tracked months with at least one investment outflow).
+  - Placeholder driver: debt burden defaults to 100 (no loan data yet) until the Loan Tracker tab ships.
+- **Custom-category synonym handling**: `classify_category` and `is_essential` match case-insensitively and recognise common user-coined labels so the user doesn't have to discover the canonical name. Examples:
+  - `SIP`, `Mutual Fund`, `MF`, `ELSS`, `PPF`, `NPS`, `Equity`, `Stocks`, `Fixed Deposit`, `FD`, `Recurring Deposit`, `RD`, `Investments` → Investment kind (excluded from expense, feeds investment-consistency driver).
+  - `Loans`, `EMI`, `Loan EMI` → essential.
+  - `Food`, `Meals` → essential (treated like Groceries).
+  - `Salary`, `Dividend`, `Interest`, `Refund`, `Bonus`, `Cashback` → income.
+  - `Credit Card Payment`, `CC Payment`, `Bank Transfer` → transfer.
 - **Fix-my-finance panel** (4.1.2): heuristic recommendations. Leads with the top discretionary category trim-by-20% (only if the suggestion is worth ≥ ₹500). Adds emergency-fund or savings-stepup nudge keyed off the savings rate. Adds a behavioral nudge when discretionary spend exceeds 60% of expenses. Always closes with the "add your investments for a real score" reminder until that tab lands.
 - "Essential" category set: Rent, Electricity, Gas, Water, Mobile, Internet, Groceries, Maintenance, Insurance, Bills, Loan EMI, Tax, Train Travel, Fuel.
 - Tested: 13 unit tests cover classification, transfer exclusion, cash-as-expense default, refund offset, period bounds, monthly bucketing, health-score high/low ends, recommendation ordering, recommendation no-op cases, empty aggregate, and sort order.
@@ -306,7 +312,7 @@ Single home for product, UX, and engineering decisions that have been raised but
 | E7 | Hash-chained audit-log UI surface in Phase 1? (Original 7.3.3 + Section 10.6 gap) | Yes — small viewer in settings |
 | E8 | Internet access blocked unless user explicitly enables per-lookup? (Original 7.3.4) | Status quo: profile-level toggle (LLM enabled flag); no per-lookup prompt |
 | E9 | Shared Gemini-models constants table between Rust (`llm_config.rs`) and TS (`UploadView.tsx`)? (Audit F-CRIT-5) | Keep separate; revisit if drift ever bites |
-| E10 | `Investments` and `Loan EMI` rows: stay bucketed as expense, or split into their own `Investment` / `Debt` cash-flow kinds? (Audit F-CRIT-2) | Stay as expense in v1; revisit when Loan Tracker (4.5) and Investment Inputs (4.4) ship and we can split EMI into principal-vs-interest |
+| E10 | `Loan EMI` rows: stay bucketed as expense, or split into their own `Debt` cash-flow kind? (Audit F-CRIT-2; investments resolved separately) | Stay as expense in v1; revisit when Loan Tracker (4.5) ships and we can split EMI into principal-vs-interest |
 | E11 | `Personal Transfer` / `UPI Transfer` — should they be classified as Transfer (excluded from expense)? (Audit F-CRIT-1) | **Decided: no.** Both labels are too ambiguous (Personal = sending to a person; UPI = often paying a merchant); conservatively keeping as expense avoids silently zeroing real outflows. P3 transfer-exclusion stays scoped to `Credit Card Payment` and `Bank Transfer` |
 | E12 | Surface a `skippedImports` count when schema-mismatched / unreadable files are dropped from the dashboard aggregate? (Audit F-INF/critique on silent fallthroughs) | Add when a schema bump actually ships |
 | E13 | Trust LLM-set categories for P3 transfer exclusion, or require `category_rule_id` provenance from user/curated rules? (Audit F-SEC-5) | Status quo (trust the category label); revisit if we see Gemini hallucinations stamping real expenses as `Credit Card Payment` |
@@ -340,6 +346,7 @@ Single home for product, UX, and engineering decisions that have been raised but
 | ~~Audit M3~~ | "Discretionary spend is large" behavioral nudge no longer fires when an `expense-cut` recommendation already named the specific category — prevents redundant advice. Pinned by `behavioral_nudge_skipped_when_expense_cut_already_fired`. | (Dashboard-full commit) |
 | ~~Audit M4~~ | `build_recommendations` no longer round-trips Decimals through formatted strings (avoiding the F-INF-3 regression pattern); it now takes a `&[(String, Decimal, u32, CategoryKind)]` snapshot of the sorted accumulator directly. | (Dashboard-full commit) |
 | ~~Audit M5~~ | `monthly_impact` is now genuinely per-month — recommendation divides the category's total debit by months in the period before the 20% trim. Pinned by `expense_cut_impact_is_monthly_not_period_total`. | (Dashboard-full commit) |
+| ~~Custom-category gap~~ | User-created labels (`SIP`, `Loans`, `Food`) were hitting expense fallthrough — the investment-consistency driver was a hardcoded 50 placeholder and SIPs counted as leakage. Added `CategoryKind::Investment`, case-insensitive synonym table in `classify_category` / `is_essential`, and a real `investment_consistency_score` based on the fraction of tracked months with at least one investment outflow. Pinned by `classify_recognises_investment_synonyms`, `is_essential_recognises_user_synonyms`, `investments_are_excluded_from_expense_and_drive_consistency`, `investment_consistency_falls_when_user_skips_months`. | (this commit) |
 
 ## 12. Pre-commit workflow (mandatory)
 For every commit that changes user-visible behavior:

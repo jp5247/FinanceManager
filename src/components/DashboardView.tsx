@@ -283,12 +283,19 @@ function OverviewTiles({ data }: { data: DashboardData }) {
 function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
   const expenses = totals.filter((t) => t.kind === "expense" && Number.parseFloat(t.totalDebit) > 0);
   const income = totals.filter((t) => t.kind === "income");
+  const investments = totals.filter(
+    (t) => t.kind === "investment" && Number.parseFloat(t.totalDebit) > 0,
+  );
 
-  if (expenses.length === 0 && income.length === 0) {
+  if (expenses.length === 0 && income.length === 0 && investments.length === 0) {
     return null;
   }
 
   const expenseMax = expenses.reduce(
+    (m, t) => Math.max(m, Number.parseFloat(t.totalDebit) || 0),
+    0,
+  );
+  const investmentMax = investments.reduce(
     (m, t) => Math.max(m, Number.parseFloat(t.totalDebit) || 0),
     0,
   );
@@ -312,6 +319,30 @@ function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
                     {t.count} {t.count === 1 ? "txn" : "txns"}
                   </div>
                   <div className="bk-amount">₹{fmtINR(t.totalDebit)}</div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      {investments.length > 0 && (
+        <>
+          <h3 className="bk-heading-secondary">Wealth-building</h3>
+          <ul className="breakdown-list">
+            {investments.map((t) => {
+              const amt = Number.parseFloat(t.totalDebit) || 0;
+              const pct = investmentMax > 0 ? (amt / investmentMax) * 100 : 0;
+              return (
+                <li key={t.category} className="breakdown-row investment">
+                  <div className="bk-name">{t.category}</div>
+                  <div className="bk-bar" aria-hidden>
+                    <div className="bk-bar-fill investment" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="bk-count muted">
+                    {t.count} {t.count === 1 ? "txn" : "txns"}
+                  </div>
+                  <div className="bk-amount investment">₹{fmtINR(t.totalDebit)}</div>
                 </li>
               );
             })}
