@@ -28,6 +28,11 @@ use tauri::State;
 
 const RAW_TXN_SCHEMA: u32 = 1;
 
+/// Sentinel month-key used for rows with a malformed date. They still count
+/// toward headline totals, but the monthly-trend view filters them out so
+/// the UI never surfaces a synthetic "undated" row.
+const UNDATED_KEY: &str = "__undated__";
+
 /// Hard cap on a single sealed `raw-transactions.json` we'll decrypt + parse
 /// into memory. Real statements top out around 100 KB; 16 MB is plenty of
 /// headroom while still bounding a maliciously-crafted (or corrupted)
@@ -224,51 +229,27 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
             }
         }
 
-        // Monthly+category bucketing — only on parser-validated ISO dates.
-        if let Some(month) = parse_iso_month(&r.txn_date) {
-            let mc = by_month_cat
-                .entry((month.to_string(), cat.to_string()))
-                .or_default();
-            mc.0 += debit;
-            mc.1 += credit;
-        }
+        // Per-(month, category) bucketing. Rows with malformed dates go
+        // into a sentinel `UNDATED_KEY` bucket so they still count toward
+        // headline totals; the monthly trend filters that bucket out.
+        let month_key = parse_iso_month(&r.txn_date).unwrap_or(UNDATED_KEY);
+        let mc = by_month_cat
+            .entry((month_key.to_string(), cat.to_string()))
+            .or_default();
+        mc.0 += debit;
+        mc.1 += credit;
     }
 
-    // Derive headline numbers from per-category aggregates using the
-    // accounting rule the user expects: refunds reduce that category's
-    // expense (never below zero), they don't re-count as income — because
-    // the original outflow was already part of income that left the
-    // account. Same applies to investment redemptions: they net against
-    // the same category's outflow, never become income.
-    let mut income = Decimal::ZERO;
-    let mut expense = Decimal::ZERO;
-    let mut essential_spend = Decimal::ZERO;
-    for (cat, acc) in &by_cat {
-        match classify_category(cat) {
-            CategoryKind::Income => {
-                income += acc.credit;
-            }
-            CategoryKind::Expense => {
-                let net = (acc.debit - acc.credit).max(Decimal::ZERO);
-                expense += net;
-                if is_essential(cat) {
-                    essential_spend += net;
-                }
-            }
-            CategoryKind::Investment | CategoryKind::Transfer => {
-                // Investment net handled below for monthly bucketing.
-                // Transfer is already accumulated.
-            }
-        }
-    }
-
-    // Roll up the (month, category) accumulator into the per-month trend
-    // using the same accounting rule.
+    // Roll up the (month, category) accumulator into per-month buckets
+    // using the accounting rule the user expects: refunds reduce that
+    // category's expense (never below zero), never become income. Same
+    // for investment redemptions.
     #[derive(Default)]
     struct MonthAcc {
         income: Decimal,
         expense: Decimal,
         investment: Decimal,
+        essential: Decimal,
     }
     let mut by_month: HashMap<String, MonthAcc> = HashMap::new();
     for ((month, cat), (mc_debit, mc_credit)) in &by_month_cat {
@@ -278,7 +259,11 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
                 m.income += *mc_credit;
             }
             CategoryKind::Expense => {
-                m.expense += (*mc_debit - *mc_credit).max(Decimal::ZERO);
+                let net = (*mc_debit - *mc_credit).max(Decimal::ZERO);
+                m.expense += net;
+                if is_essential(cat) {
+                    m.essential += net;
+                }
             }
             CategoryKind::Investment => {
                 m.investment += (*mc_debit - *mc_credit).max(Decimal::ZERO);
@@ -286,6 +271,16 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
             CategoryKind::Transfer => {}
         }
     }
+
+    // Headline numbers are the sum of per-month buckets — so the trend
+    // bars always add up to the totals shown in the overview tiles. If we
+    // clamped per-category-across-all-months for the headline AND
+    // per-(month, category) for the trend, the two could disagree by
+    // refunds that landed in a different month from the original
+    // purchase. Per-month aggregation is the user-honest cash-flow view.
+    let income: Decimal = by_month.values().map(|m| m.income).sum();
+    let expense: Decimal = by_month.values().map(|m| m.expense).sum();
+    let essential_spend: Decimal = by_month.values().map(|m| m.essential).sum();
 
     let net = income - expense;
     // Sort while we still have Decimals — round-tripping through formatted
@@ -319,17 +314,21 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         })
         .collect();
 
-    // Count months where the user made an investment outflow before
-    // consuming `by_month` for monthly_trend — drives the
-    // investment-consistency health driver.
+    // Count months where the user made an investment outflow — drives
+    // the investment-consistency health driver. Exclude the sentinel
+    // `UNDATED_KEY` bucket so its rows don't perturb the calendar count.
     let months_with_investment = by_month
-        .values()
-        .filter(|m| m.investment > Decimal::ZERO)
+        .iter()
+        .filter(|(k, m)| k.as_str() != UNDATED_KEY && m.investment > Decimal::ZERO)
         .count() as u32;
-    let total_months = by_month.len() as u32;
+    let total_months = by_month
+        .keys()
+        .filter(|k| k.as_str() != UNDATED_KEY)
+        .count() as u32;
 
     let mut monthly_trend: Vec<MonthlyBucket> = by_month
         .into_iter()
+        .filter(|(k, _)| k.as_str() != UNDATED_KEY)
         .map(|(month, acc)| MonthlyBucket {
             month,
             income: format!("{:.2}", acc.income),
@@ -438,6 +437,7 @@ fn compute_health_score(
     total_months: u32,
 ) -> HealthScore {
     let savings_rate_score = savings_rate_score(income, expense);
+    let savings_rate_explainer = savings_rate_detail(income, expense, savings_rate_score);
     let debt_burden_score = 100u32; // No loan data yet → assume no debt drag.
     let ess_disc_score = essential_vs_discretionary_score(expense, essential);
     let invest_consistency_score =
@@ -472,17 +472,42 @@ fn compute_health_score(
             label,
             score: *score,
             weight: *weight,
-            detail: driver_detail(key, *score),
+            detail: if *key == "savingsRate" {
+                savings_rate_explainer.clone()
+            } else {
+                driver_detail(key, *score)
+            },
         })
         .collect();
 
     HealthScore { composite, drivers }
 }
 
+/// Savings-rate detail needs the actual `income` / `expense` values to
+/// distinguish "no income" from "expense exceeds income" — both produce a
+/// raw score of 0 but the user-facing message is very different.
+fn savings_rate_detail(income: Decimal, expense: Decimal, score: u32) -> String {
+    if income <= Decimal::ZERO {
+        return "No income recorded yet — categorize a row as Salary, Dividend, Interest, or Refund.".into();
+    }
+    if expense > income {
+        return "Spending exceeds income for this period. The expense tile shows the gap.".into();
+    }
+    match score {
+        0 => "Spending exactly matches income — no net savings.".into(),
+        1..=24 => "Saving under 12% of income. Trim the top categories to push this up.".into(),
+        25..=49 => "Saving some, but below the 30% sweet spot.".into(),
+        50..=74 => "Healthy savings rate.".into(),
+        _ => "Strong saver — over 50% of income kept.".into(),
+    }
+}
+
 fn driver_detail(key: &str, score: u32) -> String {
     match key {
         "savingsRate" => match score {
-            0 => "No income recorded yet — upload a salary statement.".into(),
+            // Kept for backwards compatibility with other call sites; the
+            // real `savingsRate` text now comes from `savings_rate_detail`.
+            0 => "No income recorded yet.".into(),
             1..=24 => "Spending more than 75% of income. Tighten the top categories.".into(),
             25..=49 => "Saving some, but well below the 30% sweet spot.".into(),
             50..=74 => "Healthy savings rate.".into(),
@@ -919,6 +944,74 @@ mod tests {
         assert_eq!(d.net_savings, "-600.00");
         assert_eq!(d.monthly_trend[0].expense, "600.00");
         assert_eq!(d.monthly_trend[0].income, "0.00");
+    }
+
+    #[test]
+    fn savings_rate_detail_distinguishes_no_income_from_overspending() {
+        // No income at all (only debits) → driver detail should say so.
+        let rows = vec![row("2026-04-01", "X", "Groceries", Some("1000.00"), None)];
+        let d = summarise_rows(1, &rows);
+        let sr = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "savingsRate")
+            .unwrap();
+        assert_eq!(sr.score, 0);
+        assert!(
+            sr.detail.contains("No income"),
+            "expected 'No income' message, got: {}",
+            sr.detail
+        );
+
+        // Real income, but expense > income → different message.
+        let rows = vec![
+            row("2026-04-01", "S", "Salary", None, Some("20000.00")),
+            row("2026-04-15", "X", "Restaurants", Some("30000.00"), None),
+        ];
+        let d = summarise_rows(1, &rows);
+        let sr = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "savingsRate")
+            .unwrap();
+        assert_eq!(sr.score, 0);
+        assert!(
+            sr.detail.contains("exceeds income"),
+            "expected overspending message, got: {}",
+            sr.detail
+        );
+    }
+
+    #[test]
+    fn headline_totals_equal_sum_of_monthly_buckets() {
+        // Three months with mixed activity. Headline numbers must equal
+        // the sum of the rendered monthly buckets so the UI is internally
+        // consistent (no "trend bars don't add up to the overview tiles").
+        let rows = vec![
+            row("2026-03-01", "S", "Salary", None, Some("50000.00")),
+            row("2026-03-10", "X", "Groceries", Some("4000.00"), None),
+            row("2026-03-15", "X", "Restaurants", Some("3000.00"), None),
+            row("2026-04-01", "S", "Salary", None, Some("50000.00")),
+            row("2026-04-12", "X", "Groceries", Some("5000.00"), None),
+            row("2026-04-20", "X", "Restaurants", Some("2500.00"), None),
+            row("2026-05-01", "S", "Salary", None, Some("50000.00")),
+            row("2026-05-08", "X", "Online Shopping", Some("1500.00"), None),
+        ];
+        let d = summarise_rows(1, &rows);
+        let sum_income: f64 = d
+            .monthly_trend
+            .iter()
+            .map(|m| m.income.parse::<f64>().unwrap_or(0.0))
+            .sum();
+        let sum_expense: f64 = d
+            .monthly_trend
+            .iter()
+            .map(|m| m.expense.parse::<f64>().unwrap_or(0.0))
+            .sum();
+        assert!((sum_income - d.total_income.parse::<f64>().unwrap()).abs() < 0.01);
+        assert!((sum_expense - d.total_expense.parse::<f64>().unwrap()).abs() < 0.01);
     }
 
     #[test]
