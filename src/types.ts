@@ -155,6 +155,12 @@ export interface Recommendation {
   monthlyImpact: string | null;
 }
 
+export interface RecategorizeAllResult {
+  total: number;
+  touched: number;
+  skipped: number;
+}
+
 export interface LlmConfigUpdate {
   enabled?: boolean;
   model?: string;

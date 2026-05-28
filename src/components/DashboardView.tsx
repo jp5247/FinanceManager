@@ -7,6 +7,7 @@ import type {
   MonthlyBucket,
   Recommendation,
 } from "../types";
+import { CategoryDrillModal } from "./CategoryDrillModal";
 
 const inrFormatter = new Intl.NumberFormat("en-IN", {
   minimumFractionDigits: 2,
@@ -28,6 +29,7 @@ export function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [drillCategory, setDrillCategory] = useState<string | null>(null);
   // Re-entry guard via ref — React state updates are batched, so checking
   // `loading` inside refresh sees stale values during rapid clicks.
   const inFlight = useRef(false);
@@ -116,7 +118,18 @@ export function DashboardView() {
 
       <FixMyFinance recommendations={data.recommendations} />
 
-      <CategoryBreakdown totals={data.categoryTotals} />
+      <CategoryBreakdown
+        totals={data.categoryTotals}
+        onDrill={(category) => setDrillCategory(category)}
+      />
+
+      {drillCategory && (
+        <CategoryDrillModal
+          category={drillCategory}
+          onClose={() => setDrillCategory(null)}
+          onChanged={() => void refresh()}
+        />
+      )}
     </section>
   );
 }
@@ -280,7 +293,13 @@ function OverviewTiles({ data }: { data: DashboardData }) {
   );
 }
 
-function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
+function CategoryBreakdown({
+  totals,
+  onDrill,
+}: {
+  totals: CategoryTotal[];
+  onDrill: (category: string) => void;
+}) {
   const expenses = totals.filter((t) => t.kind === "expense" && Number.parseFloat(t.totalDebit) > 0);
   const income = totals.filter((t) => t.kind === "income");
   const investments = totals.filter(
@@ -302,6 +321,10 @@ function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
 
   return (
     <div className="card dash-category-card">
+      <p className="muted xsmall dash-category-hint">
+        Click a category to review and recategorize transactions across all
+        statements.
+      </p>
       {expenses.length > 0 && (
         <>
           <h3>Where the money went</h3>
@@ -311,14 +334,21 @@ function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
               const pct = expenseMax > 0 ? (amt / expenseMax) * 100 : 0;
               return (
                 <li key={t.category} className="breakdown-row">
-                  <div className="bk-name">{t.category}</div>
-                  <div className="bk-bar" aria-hidden>
-                    <div className="bk-bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="bk-count muted">
-                    {t.count} {t.count === 1 ? "txn" : "txns"}
-                  </div>
-                  <div className="bk-amount">₹{fmtINR(t.totalDebit)}</div>
+                  <button
+                    type="button"
+                    className="breakdown-row-btn"
+                    onClick={() => onDrill(t.category)}
+                    title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
+                  >
+                    <span className="bk-name">{t.category}</span>
+                    <span className="bk-bar" aria-hidden>
+                      <span className="bk-bar-fill" style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className="bk-count muted">
+                      {t.count} {t.count === 1 ? "txn" : "txns"}
+                    </span>
+                    <span className="bk-amount">₹{fmtINR(t.totalDebit)}</span>
+                  </button>
                 </li>
               );
             })}
@@ -335,14 +365,21 @@ function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
               const pct = investmentMax > 0 ? (amt / investmentMax) * 100 : 0;
               return (
                 <li key={t.category} className="breakdown-row investment">
-                  <div className="bk-name">{t.category}</div>
-                  <div className="bk-bar" aria-hidden>
-                    <div className="bk-bar-fill investment" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="bk-count muted">
-                    {t.count} {t.count === 1 ? "txn" : "txns"}
-                  </div>
-                  <div className="bk-amount investment">₹{fmtINR(t.totalDebit)}</div>
+                  <button
+                    type="button"
+                    className="breakdown-row-btn"
+                    onClick={() => onDrill(t.category)}
+                    title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
+                  >
+                    <span className="bk-name">{t.category}</span>
+                    <span className="bk-bar" aria-hidden>
+                      <span className="bk-bar-fill investment" style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className="bk-count muted">
+                      {t.count} {t.count === 1 ? "txn" : "txns"}
+                    </span>
+                    <span className="bk-amount investment">₹{fmtINR(t.totalDebit)}</span>
+                  </button>
                 </li>
               );
             })}
@@ -356,14 +393,21 @@ function CategoryBreakdown({ totals }: { totals: CategoryTotal[] }) {
           <ul className="breakdown-list">
             {income.map((t) => (
               <li key={t.category} className="breakdown-row credit">
-                <div className="bk-name">{t.category}</div>
-                <div className="bk-bar" aria-hidden>
-                  <div className="bk-bar-fill credit" style={{ width: "100%" }} />
-                </div>
-                <div className="bk-count muted">
-                  {t.count} {t.count === 1 ? "txn" : "txns"}
-                </div>
-                <div className="bk-amount credit">₹{fmtINR(t.totalCredit)}</div>
+                <button
+                  type="button"
+                  className="breakdown-row-btn"
+                  onClick={() => onDrill(t.category)}
+                  title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
+                >
+                  <span className="bk-name">{t.category}</span>
+                  <span className="bk-bar" aria-hidden>
+                    <span className="bk-bar-fill credit" style={{ width: "100%" }} />
+                  </span>
+                  <span className="bk-count muted">
+                    {t.count} {t.count === 1 ? "txn" : "txns"}
+                  </span>
+                  <span className="bk-amount credit">₹{fmtINR(t.totalCredit)}</span>
+                </button>
               </li>
             ))}
           </ul>

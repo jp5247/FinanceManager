@@ -7,6 +7,8 @@ import type {
   LlmConfigView,
   NewRuleSpec,
   ProfileSummary,
+  RawTransaction,
+  RecategorizeAllResult,
   StoredRule,
   UploadResult,
 } from "./types";
@@ -55,6 +57,14 @@ export const deleteImport = (importId: string): Promise<void> =>
 
 export const recategorizeImport = (importId: string): Promise<UploadResult> =>
   invoke<UploadResult>("recategorize_import", { importId });
+
+export const recategorizeAllImports = (): Promise<RecategorizeAllResult> =>
+  invoke<RecategorizeAllResult>("recategorize_all_imports");
+
+export const listTransactionsByCategory = (
+  category: string,
+): Promise<RawTransaction[]> =>
+  invoke<RawTransaction[]>("list_transactions_by_category", { category });
 
 export const recategorizeTransaction = (
   importId: string,

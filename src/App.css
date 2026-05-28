@@ -1231,6 +1231,81 @@ code {
   color: rgba(80, 200, 255, 0.95);
 }
 
+/* --- Clickable category breakdown rows --- */
+.dash-category-hint {
+  margin: 0 0 0.5rem 0;
+}
+
+.breakdown-row-btn {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr 4rem auto;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.breakdown-row-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
+.breakdown-row-btn:focus-visible {
+  outline: none;
+  border-color: var(--neon-cyan);
+}
+
+.breakdown-row-btn .bk-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  display: block;
+}
+
+.breakdown-row-btn .bk-bar-fill {
+  height: 100%;
+  display: block;
+}
+
+/* --- Category drill modal --- */
+.category-drill-modal {
+  width: min(960px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.drill-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.drill-header h3 {
+  margin: 0;
+}
+
+.drill-summary {
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.drill-table-wrapper {
+  max-height: 60vh;
+  overflow: auto;
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {
