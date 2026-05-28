@@ -130,6 +130,36 @@ pub fn curated_merchants() -> Vec<Rule> {
             "payment on cred",
             "Credit Card Payment",
         ),
+        // HDFC credit-card EMI bookkeeping rows. When a transaction is
+        // converted to EMI, the statement shows three related rows: the
+        // original purchase (debit), the loan principal being booked
+        // (debit), and the loan disbursement (credit). The credit and
+        // one of the debits cancel out — categorising both as "EMI
+        // Conversion" (Transfer kind) keeps them out of income / expense
+        // so only actual recurring installments + processing fee + GST
+        // count as real outflow. Pattern picked from real HDFC Regalia /
+        // Rupay statements: "AGGREGATOR-EMI-OFFUSCREDIT" on the credit
+        // side and "EMI BOOKING" / "OFFUSCREDIT" on the principal-book
+        // debit. The user can still recategorize a specific row to
+        // "Loan EMI" if it's an actual installment.
+        contains_rule(
+            "curated:hdfc-emi-offuscredit",
+            CURATED_PRIORITY,
+            "offuscredit",
+            "EMI Conversion",
+        ),
+        contains_rule(
+            "curated:hdfc-aggregator-emi",
+            CURATED_PRIORITY,
+            "aggregator-emi",
+            "EMI Conversion",
+        ),
+        contains_rule(
+            "curated:hdfc-emi-booking",
+            CURATED_PRIORITY,
+            "emi booking",
+            "EMI Conversion",
+        ),
     ]
 }
 

@@ -13,6 +13,7 @@ export const COMMON_CATEGORIES: readonly string[] = [
   "Cab / Ride",
   "Credit Card Payment",
   "Dividend",
+  "EMI Conversion",
   "Electricity",
   "Food Delivery",
   "Fuel",

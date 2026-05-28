@@ -30,6 +30,7 @@ const ALLOWED_CATEGORIES: &[&str] = &[
     "Cab / Ride",
     "Credit Card Payment",
     "Dividend",
+    "EMI Conversion",
     "Electricity",
     "Food Delivery",
     "Fuel",
@@ -276,6 +277,12 @@ fn build_prompt(items: &[LookupItem]) -> String {
          For example, 'INDIAN RAILWAY' incoming via NACH/ACH is a Dividend (IRFC shares); \
          outgoing to 'IRCTC' is Train Travel. \
          If the merchant is a person's name with no business context, use 'Personal Transfer'. \
+         Credit-card EMI bookkeeping rows (e.g. 'AGGREGATOR-EMI-OFFUSCREDIT', \
+         'EMI BOOKING', or any 'EMI <merchant>' row that represents the loan \
+         principal being booked rather than an actual monthly installment) \
+         should be 'EMI Conversion' — these net to zero across the loan \
+         disbursement. Only the actual recurring monthly EMI installment \
+         should be 'Loan EMI'. \
          If you cannot confidently pick, return 'Uncategorized'.\n\n",
     );
     out.push_str("Return JSON matching the response schema. Each result's `index` must match the input item's number (1-based).\n\n");

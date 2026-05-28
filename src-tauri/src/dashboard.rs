@@ -713,9 +713,18 @@ fn classify_category(category: &str) -> CategoryKind {
         return CategoryKind::Income;
     }
     // P3: own-account moves don't change net worth, so they're neither.
+    // "EMI conversion" covers credit-card EMI bookkeeping: the loan
+    // disbursement credit + the loan principal debit booking. They net
+    // to zero and should not affect income or expense — only the actual
+    // monthly EMI installments (Loan EMI) are real expense.
     if matches!(
         n.as_str(),
-        "credit card payment" | "cc payment" | "bank transfer"
+        "credit card payment"
+            | "cc payment"
+            | "bank transfer"
+            | "emi conversion"
+            | "loan disbursement"
+            | "loan against transaction"
     ) {
         return CategoryKind::Transfer;
     }
@@ -868,6 +877,49 @@ mod tests {
             .find(|x| x.key == "investmentConsistency")
             .unwrap();
         assert_eq!(inv.score, 50);
+    }
+
+    #[test]
+    fn emi_conversion_rows_net_to_zero_across_income_and_expense() {
+        // Real HDFC CC EMI conversion pattern: a ₹47,148 phone purchase
+        // converted to EMI surfaces as three rows — the original
+        // purchase debit, the loan principal being booked debit, and
+        // the loan disbursement credit. The user (or curated rules)
+        // categorize the bookkeeping rows as "EMI Conversion" so they
+        // stay out of income / expense entirely. Only actual recurring
+        // installments + processing fee + GST should hit expense.
+        let rows = vec![
+            // Loan principal booking + disbursement (cancel out).
+            row(
+                "2026-03-22",
+                "EMI BONITO DESIGNS",
+                "EMI Conversion",
+                Some("47500.00"),
+                None,
+            ),
+            row(
+                "2026-03-25",
+                "AGGREGATOR-EMI-OFFUSCREDIT",
+                "EMI Conversion",
+                None,
+                Some("47500.00"),
+            ),
+            // Real costs that should remain expense.
+            row(
+                "2026-03-26",
+                "EMI processing fee",
+                "Bills",
+                Some("299.00"),
+                None,
+            ),
+            row("2026-03-26", "GST on EMI", "Tax", Some("73.08"), None),
+        ];
+        let d = summarise_rows(1, &rows);
+        // EMI Conversion is Transfer kind — out of income / expense.
+        assert_eq!(d.total_income, "0.00");
+        assert_eq!(d.total_expense, "372.08");
+        // The 47,500 debit + 47,500 credit shows up as transfer total.
+        assert_eq!(d.transfer_total, "95000.00");
     }
 
     #[test]
