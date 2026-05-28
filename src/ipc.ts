@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AuditLogView,
   CreateProfileResult,
   DashboardData,
   ExportResult,
@@ -108,6 +109,9 @@ export const loansSummary = (): Promise<LoansSummary> =>
 
 export const exportToXlsx = (filePath: string): Promise<ExportResult> =>
   invoke<ExportResult>("export_to_xlsx", { filePath });
+
+export const auditLog = (): Promise<AuditLogView> =>
+  invoke<AuditLogView>("audit_log");
 
 export const recategorizeTransaction = (
   importId: string,

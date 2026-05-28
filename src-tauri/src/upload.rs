@@ -170,6 +170,19 @@ pub fn upload_pdf(
         &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
     )?;
 
+    crate::audit::record(
+        &state,
+        &user,
+        "upload_pdf",
+        Some(&import_id),
+        serde_json::json!({
+            "sourceFile": extracted.source_file,
+            "adapterId": adapter.id(),
+            "transactionCount": rows.len(),
+            "llmCategorizedCount": lookup.llm_count,
+        }),
+    );
+
     let mut result = into_upload_result(meta, rows);
     result.lookup_warning = lookup.warning;
     result.llm_categorized_count = lookup.llm_count;
@@ -247,7 +260,7 @@ pub fn recategorize_transaction(
         row.category_rule_id = Some("manual".to_string());
     }
 
-    if let Some(spec) = save_as_rule {
+    let rule_saved = if let Some(spec) = save_as_rule {
         let spec = NewRuleSpec {
             match_type: spec.match_type,
             match_value: spec.match_value,
@@ -257,8 +270,24 @@ pub fn recategorize_transaction(
                 spec.category
             },
         };
+        let pattern = spec.match_value.clone();
+        let cat = spec.category.clone();
         append_rule(&state, &user, &dek, spec)?;
-    }
+        Some((pattern, cat))
+    } else {
+        None
+    };
+
+    crate::audit::record(
+        &state,
+        &user,
+        "recategorize_transaction",
+        Some(&format!("{import_id}#{row_number}")),
+        serde_json::json!({
+            "newCategory": if trimmed.is_empty() { "Uncategorized" } else { trimmed },
+            "ruleSaved": rule_saved.as_ref().map(|(p, c)| serde_json::json!({ "pattern": p, "category": c })),
+        }),
+    );
 
     let breakdown = build_category_breakdown(&rows);
     let mut meta = meta_doc.data;
@@ -484,6 +513,18 @@ pub fn reset_categorizations(state: State<AppState>) -> Result<RecategorizeAllRe
             }
         }
     }
+    crate::audit::record(
+        &state,
+        &user,
+        "reset_categorizations",
+        None,
+        serde_json::json!({
+            "total": total,
+            "touched": touched,
+            "skipped": skipped,
+        }),
+    );
+
     Ok(RecategorizeAllResult {
         total,
         touched,
@@ -596,6 +637,13 @@ pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), St
     if abs.exists() {
         std::fs::remove_dir_all(&abs).map_err(|e| e.to_string())?;
     }
+    crate::audit::record(
+        &state,
+        &user,
+        "delete_import",
+        Some(&import_id),
+        serde_json::Value::Null,
+    );
     Ok(())
 }
 

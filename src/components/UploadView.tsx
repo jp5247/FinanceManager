@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
+  auditLog,
   deleteImport,
   deleteUserRule,
   exportToXlsx,
@@ -15,6 +16,7 @@ import {
   uploadPdf,
 } from "../ipc";
 import type {
+  AuditLogView,
   FileMeta,
   LlmConfigView,
   NewRuleSpec,
@@ -294,6 +296,8 @@ export function UploadView() {
       <LlmSettingsPanel onModelChanged={runAutoRecategorize} />
 
       <ExportPanel />
+
+      <AuditPanel />
     </section>
   );
 }
@@ -696,6 +700,93 @@ function TransactionTable({ rows, onEditCategory }: TableProps) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function AuditPanel() {
+  const [data, setData] = useState<AuditLogView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const refresh = async () => {
+    setError(null);
+    try {
+      setData(await auditLog());
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  if (!data) {
+    return (
+      <div className="card">
+        <h3>Audit log</h3>
+        <p className="muted small">{error ?? "Loading…"}</p>
+      </div>
+    );
+  }
+
+  const visible = expanded ? data.entries : data.entries.slice(0, 10);
+
+  return (
+    <div className="card">
+      <div className="rules-header">
+        <h3>Audit log ({data.entries.length})</h3>
+        <button
+          type="button"
+          className="btn btn-link inline"
+          onClick={() => void refresh()}
+        >
+          Refresh
+        </button>
+      </div>
+      <p className="muted small">
+        Hash-chained append-only log of every mutation (uploads,
+        recategorizations, resets, investment / loan edits, deletions).
+        Plaintext on disk at <span className="mono">audit/log.jsonl</span> so
+        chain integrity can be re-verified at any time.
+      </p>
+      {!data.chainOk && (
+        <div className="error-text">
+          {data.chainNote ?? "Chain integrity check failed."}
+        </div>
+      )}
+      {data.entries.length === 0 ? (
+        <p className="muted">No audit entries yet.</p>
+      ) : (
+        <>
+          <ul className="audit-list">
+            {visible.map((e) => (
+              <li key={e.thisHash} className="audit-row">
+                <div className="audit-head">
+                  <span className="mono small muted">{e.ts}</span>
+                  <span className="audit-action">{e.action}</span>
+                  {e.entityId && (
+                    <span className="mono xsmall muted">{e.entityId}</span>
+                  )}
+                </div>
+                {e.details !== null && (
+                  <pre className="audit-details">{JSON.stringify(e.details, null, 2)}</pre>
+                )}
+              </li>
+            ))}
+          </ul>
+          {data.entries.length > 10 && (
+            <button
+              type="button"
+              className="btn btn-link inline"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show only last 10" : `Show all ${data.entries.length}`}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -246,6 +246,20 @@ export interface LoansSummary {
   snowballOrder: string[];
 }
 
+export interface AuditEntryView {
+  ts: string;
+  action: string;
+  entityId: string | null;
+  details: unknown;
+  thisHash: string;
+}
+
+export interface AuditLogView {
+  entries: AuditEntryView[];
+  chainOk: boolean;
+  chainNote: string | null;
+}
+
 export interface ExportResult {
   filePath: string;
   transactionCount: number;

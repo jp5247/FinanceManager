@@ -211,6 +211,23 @@ pub fn upsert_loan(spec: UpsertLoanSpec, state: State<AppState>) -> Result<Loan,
     };
 
     save(&state, &user, &dek, &doc)?;
+    crate::audit::record(
+        &state,
+        &user,
+        if spec.id.as_deref().filter(|s| !s.is_empty()).is_some() {
+            "update_loan"
+        } else {
+            "create_loan"
+        },
+        Some(&loan.id),
+        serde_json::json!({
+            "type": loan.loan_type,
+            "lender": loan.lender,
+            "outstanding": loan.principal_outstanding,
+            "rate": loan.interest_rate,
+            "emi": loan.emi,
+        }),
+    );
     Ok(loan)
 }
 
@@ -224,6 +241,13 @@ pub fn delete_loan(id: String, state: State<AppState>) -> Result<(), String> {
         return Err(format!("loan {id} not found"));
     }
     save(&state, &user, &dek, &doc)?;
+    crate::audit::record(
+        &state,
+        &user,
+        "delete_loan",
+        Some(&id),
+        serde_json::Value::Null,
+    );
     Ok(())
 }
 

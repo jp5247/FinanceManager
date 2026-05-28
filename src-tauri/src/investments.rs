@@ -149,6 +149,22 @@ pub fn upsert_investment(
     };
 
     save(&state, &user, &dek, &doc)?;
+    crate::audit::record(
+        &state,
+        &user,
+        if spec.id.as_deref().filter(|s| !s.is_empty()).is_some() {
+            "update_investment"
+        } else {
+            "create_investment"
+        },
+        Some(&asset.id),
+        serde_json::json!({
+            "type": asset.asset_type,
+            "name": asset.asset_name,
+            "invested": asset.invested_amount,
+            "current": asset.current_value,
+        }),
+    );
     Ok(asset)
 }
 
@@ -162,6 +178,13 @@ pub fn delete_investment(id: String, state: State<AppState>) -> Result<(), Strin
         return Err(format!("asset {id} not found"));
     }
     save(&state, &user, &dek, &doc)?;
+    crate::audit::record(
+        &state,
+        &user,
+        "delete_investment",
+        Some(&id),
+        serde_json::Value::Null,
+    );
     Ok(())
 }
 

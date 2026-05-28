@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod audit;
 mod commands;
 mod dashboard;
 mod export;
@@ -66,6 +67,7 @@ pub fn run() {
             loans::delete_loan,
             loans::loans_summary,
             export::export_to_xlsx,
+            audit::audit_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
