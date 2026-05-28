@@ -176,12 +176,10 @@ fn aggregate_imports(
 }
 
 fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
-    let mut income = Decimal::ZERO;
-    let mut expense = Decimal::ZERO;
-    let mut transfer = Decimal::ZERO;
-    let mut transfer_count: u32 = 0;
     let mut earliest: Option<String> = None;
     let mut latest: Option<String> = None;
+    let mut transfer = Decimal::ZERO;
+    let mut transfer_count: u32 = 0;
 
     #[derive(Default)]
     struct CatAcc {
@@ -190,18 +188,12 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         credit: Decimal,
     }
     let mut by_cat: HashMap<String, CatAcc> = HashMap::new();
-
-    #[derive(Default)]
-    struct MonthAcc {
-        income: Decimal,
-        expense: Decimal,
-        investment: Decimal,
-    }
-    let mut by_month: HashMap<String, MonthAcc> = HashMap::new();
-    let mut essential_spend = Decimal::ZERO;
+    // Per (month, category) so each month's expense can also use the
+    // "net debits against credits, floor at zero" rule. Avoids letting a
+    // single month show a negative OUT bar when refunds dominate.
+    let mut by_month_cat: HashMap<(String, String), (Decimal, Decimal)> = HashMap::new();
 
     for r in rows {
-        // Track period bounds.
         if earliest.as_deref().is_none_or(|e| r.txn_date.as_str() < e) {
             earliest = Some(r.txn_date.clone());
         }
@@ -225,67 +217,73 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         entry.debit += debit;
         entry.credit += credit;
 
-        // Monthly bucketing — only consider rows with a parser-validated
-        // ISO date. Anything malformed gets counted in headline totals but
-        // skipped from the trend, so a parser regression can't surface a
-        // synthetic `"0000-00"` bucket in the UI.
-        let month_key = parse_iso_month(&r.txn_date).map(str::to_string);
+        if classify_category(cat) == CategoryKind::Transfer {
+            transfer += debit + credit;
+            if debit > Decimal::ZERO || credit > Decimal::ZERO {
+                transfer_count += 1;
+            }
+        }
 
+        // Monthly+category bucketing — only on parser-validated ISO dates.
+        if let Some(month) = parse_iso_month(&r.txn_date) {
+            let mc = by_month_cat
+                .entry((month.to_string(), cat.to_string()))
+                .or_default();
+            mc.0 += debit;
+            mc.1 += credit;
+        }
+    }
+
+    // Derive headline numbers from per-category aggregates using the
+    // accounting rule the user expects: refunds reduce that category's
+    // expense (never below zero), they don't re-count as income — because
+    // the original outflow was already part of income that left the
+    // account. Same applies to investment redemptions: they net against
+    // the same category's outflow, never become income.
+    let mut income = Decimal::ZERO;
+    let mut expense = Decimal::ZERO;
+    let mut essential_spend = Decimal::ZERO;
+    for (cat, acc) in &by_cat {
         match classify_category(cat) {
             CategoryKind::Income => {
-                income += credit;
-                if let Some(k) = month_key.as_deref() {
-                    by_month.entry(k.to_string()).or_default().income += credit;
-                }
-                // A debit on an income category (e.g. a salary recovery) is
-                // an exotic-enough case that we'd rather not silently fold
-                // it into expense — the user can recategorize.
+                income += acc.credit;
             }
             CategoryKind::Expense => {
-                // Direction-by-direction: a debit on an expense category is
-                // a real outflow; a credit on the same category (refund,
-                // return) is income. Previously we netted them per-row,
-                // which let a single category's refunds pull the whole
-                // month's expense negative — surfacing as a "−₹X" out-bar
-                // in the UI and inflating Net.
-                if debit > Decimal::ZERO {
-                    expense += debit;
-                    if let Some(k) = month_key.as_deref() {
-                        by_month.entry(k.to_string()).or_default().expense += debit;
-                    }
-                    if is_essential(cat) {
-                        essential_spend += debit;
-                    }
-                }
-                if credit > Decimal::ZERO {
-                    income += credit;
-                    if let Some(k) = month_key.as_deref() {
-                        by_month.entry(k.to_string()).or_default().income += credit;
-                    }
+                let net = (acc.debit - acc.credit).max(Decimal::ZERO);
+                expense += net;
+                if is_essential(cat) {
+                    essential_spend += net;
                 }
             }
-            CategoryKind::Transfer => {
-                transfer += debit + credit;
-                if debit > Decimal::ZERO || credit > Decimal::ZERO {
-                    transfer_count += 1;
-                }
+            CategoryKind::Investment | CategoryKind::Transfer => {
+                // Investment net handled below for monthly bucketing.
+                // Transfer is already accumulated.
+            }
+        }
+    }
+
+    // Roll up the (month, category) accumulator into the per-month trend
+    // using the same accounting rule.
+    #[derive(Default)]
+    struct MonthAcc {
+        income: Decimal,
+        expense: Decimal,
+        investment: Decimal,
+    }
+    let mut by_month: HashMap<String, MonthAcc> = HashMap::new();
+    for ((month, cat), (mc_debit, mc_credit)) in &by_month_cat {
+        let m = by_month.entry(month.clone()).or_default();
+        match classify_category(cat) {
+            CategoryKind::Income => {
+                m.income += *mc_credit;
+            }
+            CategoryKind::Expense => {
+                m.expense += (*mc_debit - *mc_credit).max(Decimal::ZERO);
             }
             CategoryKind::Investment => {
-                // Same split as Expense: a debit is the wealth-building
-                // outflow (SIP, PPF), a credit is a payout / redemption
-                // → income for the cash-flow tile.
-                if debit > Decimal::ZERO {
-                    if let Some(k) = month_key.as_deref() {
-                        by_month.entry(k.to_string()).or_default().investment += debit;
-                    }
-                }
-                if credit > Decimal::ZERO {
-                    income += credit;
-                    if let Some(k) = month_key.as_deref() {
-                        by_month.entry(k.to_string()).or_default().income += credit;
-                    }
-                }
+                m.investment += (*mc_debit - *mc_credit).max(Decimal::ZERO);
             }
+            CategoryKind::Transfer => {}
         }
     }
 
@@ -892,12 +890,13 @@ mod tests {
     }
 
     #[test]
-    fn credit_on_expense_category_lands_in_income_not_negative_expense() {
+    fn refund_nets_against_same_category_does_not_become_income() {
         // Spending ₹1,000 at Amazon, getting ₹400 back on a return, both
-        // ending up under "Online Shopping". Per-row cash-flow direction
-        // wins: the ₹1,000 debit is real expense and the ₹400 credit is
-        // refund-income. Net savings is the same (₹400 − ₹1000 = -₹600)
-        // but neither tile shows a negative number.
+        // ending up under "Online Shopping". The refund nets against that
+        // category's outflow (cost was ₹600 net) and is NOT counted as
+        // income — the ₹400 was originally part of the user's income that
+        // briefly left the account and came back, so counting it as new
+        // income would double-count.
         let rows = vec![
             row(
                 "2026-04-05",
@@ -915,12 +914,31 @@ mod tests {
             ),
         ];
         let d = summarise_rows(1, &rows);
-        assert_eq!(d.total_expense, "1000.00");
-        assert_eq!(d.total_income, "400.00");
+        assert_eq!(d.total_expense, "600.00");
+        assert_eq!(d.total_income, "0.00");
         assert_eq!(d.net_savings, "-600.00");
-        // Monthly bucket must never carry a negative expense.
-        assert_eq!(d.monthly_trend[0].expense, "1000.00");
-        assert_eq!(d.monthly_trend[0].income, "400.00");
+        assert_eq!(d.monthly_trend[0].expense, "600.00");
+        assert_eq!(d.monthly_trend[0].income, "0.00");
+    }
+
+    #[test]
+    fn refunds_exceeding_debits_floor_expense_at_zero_never_become_income() {
+        // Edge case the user hit in real data: a month where credits on
+        // expense-categorized rows exceed debits (probably misclassified
+        // income posing as refunds). The category nets to a non-negative
+        // expense (floored at 0) and the surplus credit is silently
+        // dropped from totals — counting it as income would inflate Net
+        // dishonestly. User can drill in and recategorize if the rows are
+        // genuinely misclassified income.
+        let rows = vec![
+            row("2026-04-05", "X", "Online Shopping", Some("100.00"), None),
+            row("2026-04-08", "X", "Online Shopping", None, Some("5000.00")),
+        ];
+        let d = summarise_rows(1, &rows);
+        assert_eq!(d.total_expense, "0.00");
+        assert_eq!(d.total_income, "0.00");
+        assert_eq!(d.net_savings, "0.00");
+        assert_eq!(d.monthly_trend[0].expense, "0.00");
     }
 
     #[test]
