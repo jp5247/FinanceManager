@@ -284,8 +284,16 @@ Supporting pieces:
 - Suggested asset types: Mutual Fund, Stock, FD, RD, PPF, NPS, ELSS, Bond, Gold, Real Estate, Crypto, Other.
 - Tested: 6 unit tests in `investments.rs` cover the summary math, allocation sorting, parse-amount Indian formatting, and edge cases (empty list, zero invested with positive value).
 
-### 10.7 Not yet implemented (Phase 1 backlog)
-- Dashboard tab (4.1) — **shipped end-to-end (10.5)**. Loan-aware "fix my finance" recommendations still blocked on the Loan Tracker tab.
+### 10.7 Loan Tracker tab (delivers 4.5)
+- Manual loan positions stored encrypted at `mappings/loans.json` (new `src-tauri/src/loans.rs`). Per-loan fields: id, loan type, lender, principal outstanding, interest rate, rate type (Fixed/Floating), remaining tenure (months), EMI, prepayment-penalty %, tax-benefit flag, start date, next due date, optional notes.
+- CRUD via four Tauri commands: `list_loans`, `upsert_loan`, `delete_loan`, `loans_summary`.
+- **Good/bad classification (P6 resolved)**: effective rate = nominal − 2.5pp (when tax-deductible). `≤ 9%` → Good, `≥ 12%` → Bad, in between → Watch. Credit-card debt is hard-coded Bad regardless of teaser rate. Per-loan rationale string surfaced to the UI.
+- **Prepayment strategy**: avalanche (highest rate first, mathematically optimal) and snowball (smallest balance first, motivationally easier). Both orderings returned as loan-id lists; UI toggles between them.
+- `LoansView` is the new fourth tab in `Home`. Summary tiles (total outstanding, monthly EMIs, weighted avg rate), strategy toggle, ranked positions table with verdict pills, and a rationale list beneath.
+- **Dashboard integration**: the Debt-Burden driver is no longer a placeholder. Computed as `1 − (monthly_EMI / monthly_income) / 0.4` (clamped 0–100). 0% EMI → score 100, 20% → 50, 40%+ → 0. Falls back to the neutral 100 only when no loan data is present.
+- Tested: 9 unit tests in `loans.rs` cover empty summary, all three verdicts including the CC special-case, weighted avg rate math, avalanche / snowball ordering, and the tax-shave floor. Plus 3 new dashboard tests pin the new debt-burden driver curve.
+
+### 10.8 Not yet implemented (Phase 1 backlog)
 - Past Analysis tab (4.3).
 - Investment Inputs tab (4.4).
 - Loan Tracker tab (4.5).
@@ -301,7 +309,6 @@ Single home for product, UX, and engineering decisions that have been raised but
 
 | ID | Question | Default if undecided |
 |---|---|---|
-| P6 | Loan classification criteria: rate threshold vs tax-benefit-and-asset-productivity vs net effective cost | Net effective borrowing cost (most defensible) |
 
 ### 11.2 UX / surfacing decisions
 
@@ -374,6 +381,7 @@ Single home for product, UX, and engineering decisions that have been raised but
 | ~~Drill U3~~ | Category chip buttons in the drill modal are disabled while a retroactive re-categorize is in flight, preventing the user from firing parallel recategorizations during the ~200ms window. | (this commit) |
 | ~~Trend negative-OUT bug + refund double-count~~ | Monthly expense could go negative when refunds on expense-categorized rows dominated debits in that month. First fix routed credits-on-expense to income, which solved the visual bug but introduced an accounting flaw — a refund of a previous purchase counted as new income, double-counting the originating salary. **Final fix**: aggregate per `(month, category)` and per category overall, then compute `expense = max(0, debit − credit)`. Refunds reduce that category's expense (never below zero) and the excess credit (if any) is silently dropped rather than become income. Same rule applies to investment-kind rows: payouts net against the same category's outflow, never become income. Pinned by `refund_nets_against_same_category_does_not_become_income` and `refunds_exceeding_debits_floor_expense_at_zero_never_become_income`. Bar widths additionally `clampPct`ed to `[0, 100]` as defense-in-depth. | (this commit) |
 | ~~Headline ≠ sum of monthly~~ | After the per-category clamp landed, the overview tiles (₹3,69,888 expense) didn't equal the sum of monthly trend bars (₹4,08,110) — a ~₹38k gap caused by refunds that landed in a different month from the original purchase. Headline now derived directly from `by_month` so the trend always adds up to the overview. Rows with malformed dates are bucketed under a sentinel `__undated__` key that's included in headline sums but filtered out of the trend view, preserving the `monthly_trend_skips_malformed_dates` contract. Pinned by `headline_totals_equal_sum_of_monthly_buckets`. | (this commit) |
+| ~~P6~~ | Loan classification criteria — **net effective borrowing cost** with a 2.5pp shave for tax-deductible loans (home, education). Thresholds: `≤ 9% Good / 9–12% Watch / ≥ 12% Bad`. Credit-card debt is always Bad regardless of nominal rate. Per-loan rationale strings make the call traceable. Implemented in `loans.rs::classify`. | (Loan Tracker commit) |
 | ~~P2~~ | Reimbursements (split) — handled via a new `Split` canonical category in the expense kind. Per-category clamp nets reimbursement credits against the initial debit (capped at zero), so fully-settled splits silently drop and partial settlements leave the user's true share as expense. No explicit "pending settlement" flag needed — the data shape is self-balancing as reimbursement rows come in over future statements. | (this commit) |
 | ~~P1~~ | Canonical category taxonomy — **25 user-curated categories** (5 bills, 3 EMI flavours, 11 lifestyle expenses, 3 income sources, 3 wealth-building) plus 3 system categories (`Refund`, `Bank Transfer`, `EMI Conversion`, `Uncategorized`). Single source of truth in `src/categories.ts::COMMON_CATEGORIES`, mirrored to `src-tauri/src/llm.rs::ALLOWED_CATEGORIES`. Curated rules + LLM prompt updated to use the new names. A **Reset categories** button in the user-rules panel (`reset_categorizations` Tauri command) wipes user rules + merchant cache + re-categorizes every import from scratch so the user can roll back any custom categorizations and adopt the canonical list. | (this commit) |
 | ~~Savings-rate "no income" message wrong~~ | The savings-rate driver was scoring 0 and reading "NO INCOME RECORDED YET — UPLOAD A SALARY STATEMENT" even when income was clearly present (₹3,16,309). The score correctly clamps to 0 when `expense > income`, but the driver-detail couldn't tell that case from the no-income case. New `savings_rate_detail` takes the actual income / expense values and surfaces three distinct messages: "no income recorded", "spending exceeds income", or the saving-rate gradient. Pinned by `savings_rate_detail_distinguishes_no_income_from_overspending`. | (this commit) |

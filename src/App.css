@@ -1432,6 +1432,94 @@ code {
   overflow: auto;
 }
 
+/* --- Loans tab --- */
+.loans-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.loans-strategy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+
+.loans-strategy-row h3 {
+  margin: 0;
+}
+
+.loans-strategy-toggle {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.loans-strategy-toggle .btn.active {
+  border-color: var(--neon-cyan);
+  color: var(--text-primary);
+}
+
+.loan-verdict {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+}
+
+.loan-verdict-good {
+  color: rgba(80, 220, 160, 0.95);
+  border-color: rgba(80, 220, 160, 0.5);
+  background: rgba(80, 220, 160, 0.08);
+}
+
+.loan-verdict-watch {
+  color: rgba(255, 200, 80, 0.95);
+  border-color: rgba(255, 200, 80, 0.5);
+  background: rgba(255, 200, 80, 0.08);
+}
+
+.loan-verdict-bad {
+  color: rgba(255, 130, 130, 0.95);
+  border-color: rgba(255, 130, 130, 0.5);
+  background: rgba(255, 130, 130, 0.08);
+}
+
+.loans-rationale-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.loans-rationale-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.loans-rationale-row.loan-verdict-good {
+  border-left-color: rgba(80, 220, 160, 0.6);
+}
+
+.loans-rationale-row.loan-verdict-watch {
+  border-left-color: rgba(255, 200, 80, 0.6);
+}
+
+.loans-rationale-row.loan-verdict-bad {
+  border-left-color: rgba(255, 130, 130, 0.6);
+}
+
 /* --- Investments tab + Wealth snapshot --- */
 .investments-view {
   display: flex;

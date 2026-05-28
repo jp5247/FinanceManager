@@ -137,7 +137,10 @@ pub struct CategoryTotal {
 pub fn dashboard_aggregate(state: State<AppState>) -> Result<DashboardData, String> {
     let (user, dek) = session(&state)?;
     let imports = list_imports_internal(&state, &user, &dek)?;
-    aggregate_imports(&state, &user, &dek, &imports)
+    // Best-effort: if the loans file is missing or malformed, debt burden
+    // falls back to the placeholder. Don't fail the dashboard over it.
+    let total_monthly_emi = crate::loans::total_monthly_emi(&state, &user, &dek).ok();
+    aggregate_imports(&state, &user, &dek, &imports, total_monthly_emi)
 }
 
 fn aggregate_imports(
@@ -145,6 +148,7 @@ fn aggregate_imports(
     user: &UserId,
     dek: &KeyBytes,
     imports: &[FileMeta],
+    total_monthly_emi: Option<Decimal>,
 ) -> Result<DashboardData, String> {
     let mut all_rows: Vec<RawTransaction> = Vec::new();
 
@@ -177,10 +181,18 @@ fn aggregate_imports(
         all_rows.extend(doc.data);
     }
 
-    Ok(summarise_rows(imports.len() as u32, &all_rows))
+    Ok(summarise_rows(
+        imports.len() as u32,
+        &all_rows,
+        total_monthly_emi,
+    ))
 }
 
-fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
+fn summarise_rows(
+    import_count: u32,
+    rows: &[RawTransaction],
+    total_monthly_emi: Option<Decimal>,
+) -> DashboardData {
     let mut earliest: Option<String> = None;
     let mut latest: Option<String> = None;
     let mut transfer = Decimal::ZERO;
@@ -337,12 +349,16 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
         })
         .collect();
     monthly_trend.sort_by(|a, b| a.month.cmp(&b.month));
+    let months_for_income = total_months.max(1);
+    let monthly_income = income / Decimal::from(months_for_income);
     let health_score = compute_health_score(
         income,
         expense,
         essential_spend,
         months_with_investment,
         total_months,
+        total_monthly_emi,
+        monthly_income,
     );
     // Recommendations consume Decimals directly — never the formatted
     // category_totals — so trim math stays exact (regression of F-INF-3).
@@ -437,21 +453,22 @@ fn is_essential(category: &str) -> bool {
 /// Composite financial-health score per FinanceManager.md §11.4 P5.
 ///
 /// Weights: 40% savings rate, 25% debt burden, 20% essential vs
-/// discretionary, 15% investment consistency.
-///
-/// Savings rate, essential-vs-discretionary, and investment consistency are
-/// driven by real data. Debt burden remains a placeholder (100) until the
-/// Loan Tracker tab ships.
+/// discretionary, 15% investment consistency. All four drivers use real
+/// data once the Loan Tracker has at least one loan; debt burden falls
+/// back to a neutral placeholder when no loan data is present.
 fn compute_health_score(
     income: Decimal,
     expense: Decimal,
     essential: Decimal,
     months_with_investment: u32,
     total_months: u32,
+    total_monthly_emi: Option<Decimal>,
+    monthly_income: Decimal,
 ) -> HealthScore {
     let savings_rate_score = savings_rate_score(income, expense);
     let savings_rate_explainer = savings_rate_detail(income, expense, savings_rate_score);
-    let debt_burden_score = 100u32; // No loan data yet → assume no debt drag.
+    let (debt_burden_score, debt_burden_explainer) =
+        debt_burden_driver(total_monthly_emi, monthly_income);
     let ess_disc_score = essential_vs_discretionary_score(expense, essential);
     let invest_consistency_score =
         investment_consistency_score(months_with_investment, total_months);
@@ -487,6 +504,8 @@ fn compute_health_score(
             weight: *weight,
             detail: if *key == "savingsRate" {
                 savings_rate_explainer.clone()
+            } else if *key == "debtBurden" {
+                debt_burden_explainer.clone()
             } else {
                 driver_detail(key, *score)
             },
@@ -543,6 +562,54 @@ fn driver_detail(key: &str, score: u32) -> String {
         },
         _ => String::new(),
     }
+}
+
+/// Debt-burden driver derived from the Loan Tracker.
+///
+/// `debt_burden_ratio = total_monthly_emi / monthly_income` (capped at 1.0).
+/// Score is `(1 - ratio / 0.4) * 100` clamped to `[0, 100]` — so 0% EMI
+/// → 100, 20% EMI → 50, 40%+ EMI → 0. Indian retail-banking rule of
+/// thumb is "EMI under 40% of take-home", which anchors the 0-score.
+///
+/// Falls back to a neutral placeholder (100) when either side is absent.
+fn debt_burden_driver(
+    total_monthly_emi: Option<Decimal>,
+    monthly_income: Decimal,
+) -> (u32, String) {
+    let emi = match total_monthly_emi {
+        Some(e) if e > Decimal::ZERO => e,
+        _ => {
+            return (
+                100,
+                "No loan data yet — add loans in the Loan Tracker for a real score.".into(),
+            );
+        }
+    };
+    if monthly_income <= Decimal::ZERO {
+        return (
+            100,
+            "No income recorded — debt burden is unknown until a salary statement is uploaded."
+                .into(),
+        );
+    }
+    let ratio_f = decimal_to_f32(emi) / decimal_to_f32(monthly_income);
+    let score = ((1.0 - (ratio_f / 0.4)).clamp(0.0, 1.0) * 100.0).round() as u32;
+    let pct = (ratio_f * 100.0).clamp(0.0, 999.0);
+    let detail = match score {
+        0 => format!(
+            "EMIs are {pct:.0}% of monthly income — at or above the 40% safe-debt ceiling. Prioritize prepayment."
+        ),
+        1..=49 => format!(
+            "EMIs are {pct:.0}% of monthly income — above the 20% comfort zone. Consider prepayment when surplus permits."
+        ),
+        50..=79 => format!(
+            "EMIs are {pct:.0}% of monthly income — in the comfortable middle. Stay disciplined on the EMI."
+        ),
+        _ => format!(
+            "EMIs are {pct:.0}% of monthly income — well below the 20% comfort threshold. Healthy debt level."
+        ),
+    };
+    (score, detail)
 }
 
 fn savings_rate_score(income: Decimal, expense: Decimal) -> u32 {
@@ -864,7 +931,7 @@ mod tests {
             row("2026-05-01", "S", "Salary", None, Some("100000.00")),
             row("2026-05-15", "SIP", "Mutual Fund", Some("10000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "0.00");
         let inv = d
             .health_score
@@ -887,7 +954,7 @@ mod tests {
             row("2026-05-01", "S", "Salary", None, Some("100000.00")),
             row("2026-05-15", "SIP", "SIP", Some("10000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let inv = d
             .health_score
             .drivers
@@ -895,6 +962,57 @@ mod tests {
             .find(|x| x.key == "investmentConsistency")
             .unwrap();
         assert_eq!(inv.score, 50);
+    }
+
+    #[test]
+    fn debt_burden_driver_scales_with_emi_share_of_income() {
+        // 100k salary in one month, 10k EMIs → 10% burden → comfortable
+        // (above 50, below 79).
+        let rows = vec![row("2026-04-01", "S", "Salary", None, Some("100000.00"))];
+        let d = summarise_rows(
+            1,
+            &rows,
+            Some(rust_decimal::Decimal::new(10000, 0)), // ₹10,000 EMIs
+        );
+        let db = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "debtBurden")
+            .unwrap();
+        // (1 - 0.10/0.40) * 100 = 75
+        assert_eq!(db.score, 75);
+    }
+
+    #[test]
+    fn debt_burden_driver_zero_when_emi_is_at_or_above_40_percent() {
+        let rows = vec![row("2026-04-01", "S", "Salary", None, Some("100000.00"))];
+        let d = summarise_rows(
+            1,
+            &rows,
+            Some(rust_decimal::Decimal::new(45000, 0)), // ₹45k EMIs = 45% of income
+        );
+        let db = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "debtBurden")
+            .unwrap();
+        assert_eq!(db.score, 0);
+    }
+
+    #[test]
+    fn debt_burden_driver_neutral_when_no_loan_data() {
+        let rows = vec![row("2026-04-01", "S", "Salary", None, Some("100000.00"))];
+        let d = summarise_rows(1, &rows, None);
+        let db = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "debtBurden")
+            .unwrap();
+        assert_eq!(db.score, 100);
+        assert!(db.detail.contains("No loan data"));
     }
 
     #[test]
@@ -919,7 +1037,7 @@ mod tests {
                 Some("2000.00"),
             ),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "1000.00");
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.net_savings, "-1000.00");
@@ -945,7 +1063,7 @@ mod tests {
                 Some("2000.00"),
             ),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "0.00");
         assert_eq!(d.total_income, "0.00");
     }
@@ -985,7 +1103,7 @@ mod tests {
             ),
             row("2026-03-26", "GST on EMI", "Tax", Some("73.08"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         // EMI Conversion is Transfer kind — out of income / expense.
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.total_expense, "372.08");
@@ -1015,7 +1133,7 @@ mod tests {
                 None,
             ),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_income, "50000.00");
         assert_eq!(d.total_expense, "3000.00");
         assert_eq!(d.net_savings, "47000.00");
@@ -1032,7 +1150,7 @@ mod tests {
             Some("5000.00"),
             None,
         )];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "5000.00");
         assert_eq!(d.transfer_total, "0.00");
     }
@@ -1061,7 +1179,7 @@ mod tests {
                 Some("400.00"),
             ),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "600.00");
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.net_savings, "-600.00");
@@ -1073,7 +1191,7 @@ mod tests {
     fn savings_rate_detail_distinguishes_no_income_from_overspending() {
         // No income at all (only debits) → driver detail should say so.
         let rows = vec![row("2026-04-01", "X", "Groceries", Some("1000.00"), None)];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let sr = d
             .health_score
             .drivers
@@ -1092,7 +1210,7 @@ mod tests {
             row("2026-04-01", "S", "Salary", None, Some("20000.00")),
             row("2026-04-15", "X", "Restaurants", Some("30000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let sr = d
             .health_score
             .drivers
@@ -1122,7 +1240,7 @@ mod tests {
             row("2026-05-01", "S", "Salary", None, Some("50000.00")),
             row("2026-05-08", "X", "Online Shopping", Some("1500.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let sum_income: f64 = d
             .monthly_trend
             .iter()
@@ -1150,7 +1268,7 @@ mod tests {
             row("2026-04-05", "X", "Online Shopping", Some("100.00"), None),
             row("2026-04-08", "X", "Online Shopping", None, Some("5000.00")),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "0.00");
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.net_savings, "0.00");
@@ -1164,7 +1282,7 @@ mod tests {
             row("2026-03-02", "X", "Groceries", Some("100.00"), None),
             row("2026-05-20", "X", "Groceries", Some("100.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.period_start.as_deref(), Some("2026-03-02"));
         assert_eq!(d.period_end.as_deref(), Some("2026-05-20"));
     }
@@ -1181,7 +1299,7 @@ mod tests {
             Some("5000.00"),
             None,
         )];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.total_expense, "0.00");
         // Category breakdown still surfaces the row so it's not invisible.
@@ -1191,7 +1309,7 @@ mod tests {
 
     #[test]
     fn empty_imports_return_zeroed_aggregate() {
-        let d = summarise_rows(0, &[]);
+        let d = summarise_rows(0, &[], None);
         assert_eq!(d.import_count, 0);
         assert_eq!(d.total_income, "0.00");
         assert_eq!(d.total_expense, "0.00");
@@ -1207,7 +1325,7 @@ mod tests {
             row("2026-04-10", "X", "Restaurants", Some("3000.00"), None),
             row("2026-04-20", "X", "Restaurants", Some("2000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.monthly_trend.len(), 2);
         assert_eq!(d.monthly_trend[0].month, "2026-03");
         assert_eq!(d.monthly_trend[0].income, "0.00");
@@ -1228,7 +1346,7 @@ mod tests {
             row("2026-04-15", "X", "Groceries", Some("10000.00"), None),
             row("2026-04-20", "X", "SIP", Some("10000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         // 70% rate clamped against the 50%-cap → savings driver = 100.
         let sr = d
             .health_score
@@ -1263,7 +1381,7 @@ mod tests {
             row("2026-04-01", "S", "Salary", None, Some("20000.00")),
             row("2026-04-10", "X", "Restaurants", Some("30000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let sr = d
             .health_score
             .drivers
@@ -1280,7 +1398,7 @@ mod tests {
             row("2026-04-10", "X", "Restaurants", Some("15000.00"), None),
             row("2026-04-20", "X", "Rent", Some("20000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         // Restaurants is bigger discretionary → first recommendation.
         assert!(d.recommendations[0].title.contains("Restaurants"));
         assert_eq!(d.recommendations[0].kind, "expense-cut");
@@ -1304,7 +1422,7 @@ mod tests {
             row("2026-05-01", "S", "Salary", None, Some("100000.00")),
             row("2026-05-10", "X", "Restaurants", Some("15000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let cut = d
             .recommendations
             .iter()
@@ -1323,7 +1441,7 @@ mod tests {
             row("2026-04-10", "X", "Restaurants", Some("30000.00"), None),
             row("2026-04-15", "X", "Online Shopping", Some("10000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         let has_cut = d.recommendations.iter().any(|r| r.kind == "expense-cut");
         let has_behavioral = d.recommendations.iter().any(|r| r.kind == "behavioral");
         assert!(has_cut);
@@ -1353,7 +1471,7 @@ mod tests {
             row("2026-04-10", "X", "Groceries", Some("1000.00"), None),
             row("bad-date", "X", "Groceries", Some("500.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.total_expense, "1500.00");
         assert_eq!(d.monthly_trend.len(), 1);
         assert_eq!(d.monthly_trend[0].month, "2026-04");
@@ -1375,7 +1493,7 @@ mod tests {
         // Income only, no expenses → no expense-cut recommendation but
         // savings-rate nudges still don't fire (rate is positive infinite-ish).
         let rows = vec![row("2026-04-01", "S", "Salary", None, Some("50000.00"))];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert!(d.recommendations.iter().all(|r| r.kind != "expense-cut"));
     }
 
@@ -1386,7 +1504,7 @@ mod tests {
             row("2026-04-02", "X", "Restaurants", Some("8000.00"), None),
             row("2026-04-03", "X", "Fuel", Some("2000.00"), None),
         ];
-        let d = summarise_rows(1, &rows);
+        let d = summarise_rows(1, &rows, None);
         assert_eq!(d.category_totals[0].category, "Restaurants");
         assert_eq!(d.category_totals[1].category, "Groceries");
         assert_eq!(d.category_totals[2].category, "Fuel");

@@ -5,6 +5,7 @@ mod dashboard;
 mod investments;
 mod llm;
 mod llm_config;
+mod loans;
 mod merchant_cache;
 mod state;
 mod upload;
@@ -59,6 +60,10 @@ pub fn run() {
             investments::upsert_investment,
             investments::delete_investment,
             investments::investments_summary,
+            loans::list_loans,
+            loans::upsert_loan,
+            loans::delete_loan,
+            loans::loans_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

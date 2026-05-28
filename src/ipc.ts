@@ -7,12 +7,15 @@ import type {
   InvestmentsSummary,
   LlmConfigUpdate,
   LlmConfigView,
+  Loan,
+  LoansSummary,
   NewRuleSpec,
   ProfileSummary,
   RawTransaction,
   RecategorizeAllResult,
   StoredRule,
   UpsertInvestmentSpec,
+  UpsertLoanSpec,
   UploadResult,
 } from "./types";
 
@@ -90,6 +93,17 @@ export const deleteInvestment = (id: string): Promise<void> =>
 
 export const investmentsSummary = (): Promise<InvestmentsSummary> =>
   invoke<InvestmentsSummary>("investments_summary");
+
+export const listLoans = (): Promise<Loan[]> => invoke<Loan[]>("list_loans");
+
+export const upsertLoan = (spec: UpsertLoanSpec): Promise<Loan> =>
+  invoke<Loan>("upsert_loan", { spec });
+
+export const deleteLoan = (id: string): Promise<void> =>
+  invoke<void>("delete_loan", { id });
+
+export const loansSummary = (): Promise<LoansSummary> =>
+  invoke<LoansSummary>("loans_summary");
 
 export const recategorizeTransaction = (
   importId: string,

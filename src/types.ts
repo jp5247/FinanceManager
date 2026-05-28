@@ -193,6 +193,59 @@ export interface InvestmentsSummary {
   allocation: AllocationSlice[];
 }
 
+export interface Loan {
+  id: string;
+  loanType: string;
+  lender: string;
+  principalOutstanding: string;
+  interestRate: string;
+  rateType: string;
+  remainingTenureMonths: number;
+  emi: string;
+  prepaymentPenaltyPct: string;
+  taxBenefit: boolean;
+  startDate: string;
+  nextDueDate: string;
+  notes?: string | null;
+  lastUpdatedAt: string;
+}
+
+export interface UpsertLoanSpec {
+  id?: string;
+  loanType: string;
+  lender: string;
+  principalOutstanding: string;
+  interestRate: string;
+  rateType: string;
+  remainingTenureMonths: number;
+  emi: string;
+  prepaymentPenaltyPct?: string;
+  taxBenefit?: boolean;
+  startDate: string;
+  nextDueDate: string;
+  notes?: string | null;
+}
+
+export interface LoanClassification {
+  loanId: string;
+  /** "good" | "watch" | "bad" */
+  verdict: string;
+  effectiveRate: string;
+  rationale: string;
+}
+
+export interface LoansSummary {
+  loanCount: number;
+  totalOutstanding: string;
+  totalMonthlyEmi: string;
+  weightedAvgRate: string;
+  classifications: LoanClassification[];
+  /** Loan IDs ordered by avalanche (highest rate first) priority. */
+  avalancheOrder: string[];
+  /** Loan IDs ordered by snowball (smallest balance first) priority. */
+  snowballOrder: string[];
+}
+
 export interface RecategorizeAllResult {
   total: number;
   touched: number;
