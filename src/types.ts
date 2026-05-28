@@ -246,6 +246,15 @@ export interface LoansSummary {
   snowballOrder: string[];
 }
 
+export interface ExportResult {
+  filePath: string;
+  transactionCount: number;
+  uncategorizedCount: number;
+  investmentCount: number;
+  loanCount: number;
+  warning?: string | null;
+}
+
 export interface RecategorizeAllResult {
   total: number;
   touched: number;

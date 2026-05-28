@@ -2,6 +2,7 @@
 
 mod commands;
 mod dashboard;
+mod export;
 mod investments;
 mod llm;
 mod llm_config;
@@ -64,6 +65,7 @@ pub fn run() {
             loans::upsert_loan,
             loans::delete_loan,
             loans::loans_summary,
+            export::export_to_xlsx,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

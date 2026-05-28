@@ -25,6 +25,7 @@ rand = "0.8"
 rust_decimal = { workspace = true }
 ureq = { version = "2.10", features = ["json"] }
 regex = "1"
+rust_xlsxwriter = "0.78"
 fm-core = { path = "../crates/fm-core" }
 fm-storage = { path = "../crates/fm-storage" }
 fm-crypto = { path = "../crates/fm-crypto" }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   deleteImport,
   deleteUserRule,
+  exportToXlsx,
   getImport,
   getLlmConfig,
   listImports,
@@ -291,6 +292,8 @@ export function UploadView() {
       />
 
       <LlmSettingsPanel onModelChanged={runAutoRecategorize} />
+
+      <ExportPanel />
     </section>
   );
 }
@@ -693,6 +696,59 @@ function TransactionTable({ rows, onEditCategory }: TableProps) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ExportPanel() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setError(null);
+    setResult(null);
+    try {
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      const target = await saveDialog({
+        defaultPath: `FinanceManager-${stamp}.xlsx`,
+        filters: [{ name: "Excel workbook", extensions: ["xlsx"] }],
+      });
+      if (!target) return;
+      setBusy(true);
+      const r = await exportToXlsx(target);
+      const lines = [
+        `Saved to ${r.filePath}.`,
+        `${r.transactionCount} transactions · ${r.investmentCount} assets · ${r.loanCount} loans.`,
+      ];
+      if (r.warning) lines.push(r.warning);
+      setResult(lines.join(" "));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>Export to Excel</h3>
+      <p className="muted small">
+        One workbook with sheets for Summary, Transactions, Categories,
+        Investments, and Loans. Values-only — no formulas. Uncategorized
+        rows are flagged but don't block the export.
+      </p>
+      <button
+        type="button"
+        className="btn btn-primary btn-sm"
+        onClick={() => void run()}
+        disabled={busy}
+      >
+        {busy ? "Exporting…" : "Export now"}
+      </button>
+      {result && <p className="muted small">{result}</p>}
+      {error && <div className="error-text">{error}</div>}
     </div>
   );
 }

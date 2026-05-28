@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateProfileResult,
   DashboardData,
+  ExportResult,
   FileMeta,
   InvestmentAsset,
   InvestmentsSummary,
@@ -104,6 +105,9 @@ export const deleteLoan = (id: string): Promise<void> =>
 
 export const loansSummary = (): Promise<LoansSummary> =>
   invoke<LoansSummary>("loans_summary");
+
+export const exportToXlsx = (filePath: string): Promise<ExportResult> =>
+  invoke<ExportResult>("export_to_xlsx", { filePath });
 
 export const recategorizeTransaction = (
   importId: string,
