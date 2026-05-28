@@ -1121,47 +1121,91 @@ code {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.9rem;
 }
 
 .trend-row {
   display: grid;
   grid-template-columns: 5rem 1fr auto;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.8rem;
+  padding: 0.55rem 0.6rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.trend-month {
+  font-weight: 600;
 }
 
 .trend-bars {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.4rem;
+}
+
+.trend-bar-row {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.trend-bar-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .trend-bar-track {
-  height: 6px;
+  height: 12px;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
 .trend-bar-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: 6px;
+  box-shadow: 0 0 8px rgba(80, 220, 160, 0.15);
 }
 
 .trend-bar-fill.income {
-  background: rgba(80, 220, 160, 0.85);
+  background: linear-gradient(90deg, rgba(80, 220, 160, 0.55), rgba(80, 220, 160, 0.95));
 }
 
 .trend-bar-fill.expense {
-  background: rgba(255, 130, 130, 0.85);
+  background: linear-gradient(90deg, rgba(255, 130, 130, 0.55), rgba(255, 130, 130, 0.95));
+  box-shadow: 0 0 8px rgba(255, 130, 130, 0.15);
+}
+
+.trend-bar-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 6.5rem;
+  text-align: right;
+}
+
+.trend-bar-amount.credit {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.trend-bar-amount.debit {
+  color: rgba(255, 130, 130, 0.95);
 }
 
 .trend-net {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  min-width: 6rem;
+  font-weight: 700;
+  min-width: 7rem;
   text-align: right;
+  font-size: 1.05rem;
+}
+
+.trend-net-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
 }
 
 .trend-net.credit {
@@ -1236,9 +1280,27 @@ code {
   margin: 0 0 0.5rem 0;
 }
 
+.breakdown-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0.8rem 0 0.3rem 0;
+}
+
+.breakdown-section-head h3 {
+  margin: 0;
+}
+
+.breakdown-section-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
 .breakdown-row-btn {
   display: grid;
-  grid-template-columns: minmax(8rem, 12rem) 1fr 4rem auto;
+  grid-template-columns: minmax(8rem, 12rem) 1fr 3rem 4rem 7rem;
   align-items: center;
   gap: 0.6rem;
   width: 100%;
@@ -1246,7 +1308,7 @@ code {
   color: inherit;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.55rem;
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -1263,9 +1325,9 @@ code {
 }
 
 .breakdown-row-btn .bk-bar {
-  height: 6px;
+  height: 10px;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
+  border-radius: 5px;
   overflow: hidden;
   display: block;
 }
@@ -1273,6 +1335,44 @@ code {
 .breakdown-row-btn .bk-bar-fill {
   height: 100%;
   display: block;
+  border-radius: 5px;
+}
+
+.breakdown-row-btn .bk-bar-fill.expense {
+  background: linear-gradient(90deg, rgba(255, 130, 130, 0.55), rgba(255, 130, 130, 0.95));
+}
+
+.breakdown-row-btn .bk-bar-fill.investment {
+  background: linear-gradient(90deg, rgba(80, 220, 160, 0.55), rgba(80, 220, 160, 0.95));
+}
+
+.breakdown-row-btn .bk-bar-fill.credit {
+  background: linear-gradient(90deg, rgba(80, 220, 160, 0.55), rgba(80, 220, 160, 0.95));
+}
+
+.bk-pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.bk-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.bk-amount-expense {
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.bk-amount-investment {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.bk-amount-credit {
+  color: rgba(80, 220, 160, 0.95);
 }
 
 /* --- Category drill modal --- */

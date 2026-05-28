@@ -202,21 +202,32 @@ function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
             <li key={b.month} className="trend-row">
               <div className="trend-month mono">{b.month}</div>
               <div className="trend-bars">
-                <div className="trend-bar-track" aria-label={`income ${b.income}`}>
-                  <div
-                    className="trend-bar-fill income"
-                    style={{ width: `${(inc / max) * 100}%` }}
-                  />
+                <div className="trend-bar-row">
+                  <span className="trend-bar-label muted xsmall">In</span>
+                  <div className="trend-bar-track" aria-label={`income ${b.income}`}>
+                    <div
+                      className="trend-bar-fill income"
+                      style={{ width: `${(inc / max) * 100}%` }}
+                    />
+                  </div>
+                  <span className="trend-bar-amount credit">₹{fmtINR(b.income)}</span>
                 </div>
-                <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
-                  <div
-                    className="trend-bar-fill expense"
-                    style={{ width: `${(exp / max) * 100}%` }}
-                  />
+                <div className="trend-bar-row">
+                  <span className="trend-bar-label muted xsmall">Out</span>
+                  <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
+                    <div
+                      className="trend-bar-fill expense"
+                      style={{ width: `${(exp / max) * 100}%` }}
+                    />
+                  </div>
+                  <span className="trend-bar-amount debit">₹{fmtINR(b.expense)}</span>
                 </div>
               </div>
               <div className={`trend-net ${net >= 0 ? "credit" : "debit"}`}>
-                {net >= 0 ? "+" : "−"}₹{fmtINR(Math.abs(net).toFixed(2))}
+                <div className="trend-net-label muted xsmall">Net</div>
+                <div>
+                  {net >= 0 ? "+" : "−"}₹{fmtINR(Math.abs(net).toFixed(2))}
+                </div>
               </div>
             </li>
           );
@@ -310,109 +321,117 @@ function CategoryBreakdown({
     return null;
   }
 
-  const expenseMax = expenses.reduce(
-    (m, t) => Math.max(m, Number.parseFloat(t.totalDebit) || 0),
-    0,
-  );
-  const investmentMax = investments.reduce(
-    (m, t) => Math.max(m, Number.parseFloat(t.totalDebit) || 0),
-    0,
-  );
+  const sumDebit = (xs: CategoryTotal[]) =>
+    xs.reduce((s, t) => s + (Number.parseFloat(t.totalDebit) || 0), 0);
+  const sumCredit = (xs: CategoryTotal[]) =>
+    xs.reduce((s, t) => s + (Number.parseFloat(t.totalCredit) || 0), 0);
+
+  const expenseTotal = sumDebit(expenses);
+  const investmentTotal = sumDebit(investments);
+  const incomeTotal = sumCredit(income);
 
   return (
     <div className="card dash-category-card">
       <p className="muted xsmall dash-category-hint">
         Click a category to review and recategorize transactions across all
-        statements.
+        statements. Bar width and % show the category's share of its group.
       </p>
+
       {expenses.length > 0 && (
-        <>
-          <h3>Where the money went</h3>
-          <ul className="breakdown-list">
-            {expenses.map((t) => {
-              const amt = Number.parseFloat(t.totalDebit) || 0;
-              const pct = expenseMax > 0 ? (amt / expenseMax) * 100 : 0;
-              return (
-                <li key={t.category} className="breakdown-row">
-                  <button
-                    type="button"
-                    className="breakdown-row-btn"
-                    onClick={() => onDrill(t.category)}
-                    title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
-                  >
-                    <span className="bk-name">{t.category}</span>
-                    <span className="bk-bar" aria-hidden>
-                      <span className="bk-bar-fill" style={{ width: `${pct}%` }} />
-                    </span>
-                    <span className="bk-count muted">
-                      {t.count} {t.count === 1 ? "txn" : "txns"}
-                    </span>
-                    <span className="bk-amount">₹{fmtINR(t.totalDebit)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+        <BreakdownSection
+          heading="Where the money went"
+          total={expenseTotal}
+          rows={expenses}
+          amountKind="debit"
+          accent="expense"
+          onDrill={onDrill}
+        />
       )}
 
       {investments.length > 0 && (
-        <>
-          <h3 className="bk-heading-secondary">Wealth-building</h3>
-          <ul className="breakdown-list">
-            {investments.map((t) => {
-              const amt = Number.parseFloat(t.totalDebit) || 0;
-              const pct = investmentMax > 0 ? (amt / investmentMax) * 100 : 0;
-              return (
-                <li key={t.category} className="breakdown-row investment">
-                  <button
-                    type="button"
-                    className="breakdown-row-btn"
-                    onClick={() => onDrill(t.category)}
-                    title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
-                  >
-                    <span className="bk-name">{t.category}</span>
-                    <span className="bk-bar" aria-hidden>
-                      <span className="bk-bar-fill investment" style={{ width: `${pct}%` }} />
-                    </span>
-                    <span className="bk-count muted">
-                      {t.count} {t.count === 1 ? "txn" : "txns"}
-                    </span>
-                    <span className="bk-amount investment">₹{fmtINR(t.totalDebit)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+        <BreakdownSection
+          heading="Wealth-building"
+          total={investmentTotal}
+          rows={investments}
+          amountKind="debit"
+          accent="investment"
+          onDrill={onDrill}
+        />
       )}
 
       {income.length > 0 && (
-        <>
-          <h3 className="bk-heading-secondary">Money in</h3>
-          <ul className="breakdown-list">
-            {income.map((t) => (
-              <li key={t.category} className="breakdown-row credit">
-                <button
-                  type="button"
-                  className="breakdown-row-btn"
-                  onClick={() => onDrill(t.category)}
-                  title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"}`}
-                >
-                  <span className="bk-name">{t.category}</span>
-                  <span className="bk-bar" aria-hidden>
-                    <span className="bk-bar-fill credit" style={{ width: "100%" }} />
-                  </span>
-                  <span className="bk-count muted">
-                    {t.count} {t.count === 1 ? "txn" : "txns"}
-                  </span>
-                  <span className="bk-amount credit">₹{fmtINR(t.totalCredit)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
+        <BreakdownSection
+          heading="Money in"
+          total={incomeTotal}
+          rows={income}
+          amountKind="credit"
+          accent="credit"
+          onDrill={onDrill}
+        />
       )}
     </div>
+  );
+}
+
+function BreakdownSection({
+  heading,
+  total,
+  rows,
+  amountKind,
+  accent,
+  onDrill,
+}: {
+  heading: string;
+  total: number;
+  rows: CategoryTotal[];
+  amountKind: "debit" | "credit";
+  /** Drives the amount-text color + bar-fill class. */
+  accent: "expense" | "investment" | "credit";
+  onDrill: (category: string) => void;
+}) {
+  return (
+    <>
+      <div className="breakdown-section-head">
+        <h3 className="bk-heading-secondary">{heading}</h3>
+        <span className={`breakdown-section-total bk-amount-${accent}`}>
+          ₹{new Intl.NumberFormat("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(total)}
+        </span>
+      </div>
+      <ul className="breakdown-list">
+        {rows.map((t) => {
+          const raw = amountKind === "debit" ? t.totalDebit : t.totalCredit;
+          const amt = Number.parseFloat(raw) || 0;
+          const pct = total > 0 ? (amt / total) * 100 : 0;
+          return (
+            <li key={t.category} className={`breakdown-row ${accent}`}>
+              <button
+                type="button"
+                className="breakdown-row-btn"
+                onClick={() => onDrill(t.category)}
+                title={`Review ${t.count} ${t.category} transaction${t.count === 1 ? "" : "s"} — ${pct.toFixed(1)}% of ${heading.toLowerCase()}`}
+              >
+                <span className="bk-name">{t.category}</span>
+                <span className="bk-bar" aria-hidden>
+                  <span
+                    className={`bk-bar-fill ${accent}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </span>
+                <span className="bk-pct">{pct.toFixed(0)}%</span>
+                <span className="bk-count muted">
+                  {t.count} {t.count === 1 ? "txn" : "txns"}
+                </span>
+                <span className={`bk-amount bk-amount-${accent}`}>
+                  ₹{fmtINR(raw)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
