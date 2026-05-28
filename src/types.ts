@@ -122,6 +122,37 @@ export interface DashboardData {
   transferCount: number;
   transferTotal: string;
   categoryTotals: CategoryTotal[];
+  monthlyTrend: MonthlyBucket[];
+  healthScore: HealthScore;
+  recommendations: Recommendation[];
+}
+
+export interface MonthlyBucket {
+  /** `YYYY-MM` */
+  month: string;
+  income: string;
+  expense: string;
+  net: string;
+}
+
+export interface HealthScore {
+  composite: number;
+  drivers: HealthDriver[];
+}
+
+export interface HealthDriver {
+  key: string;
+  label: string;
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface Recommendation {
+  kind: string;
+  title: string;
+  detail: string;
+  monthlyImpact: string | null;
 }
 
 export interface LlmConfigUpdate {

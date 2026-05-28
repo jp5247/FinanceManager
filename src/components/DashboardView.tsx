@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dashboardAggregate } from "../ipc";
-import type { CategoryTotal, DashboardData } from "../types";
+import type {
+  CategoryTotal,
+  DashboardData,
+  HealthScore,
+  MonthlyBucket,
+  Recommendation,
+} from "../types";
 
 const inrFormatter = new Intl.NumberFormat("en-IN", {
   minimumFractionDigits: 2,
@@ -95,6 +101,8 @@ export function DashboardView() {
         </button>
       </header>
 
+      <HealthStrip score={data.healthScore} />
+
       <OverviewTiles data={data} />
 
       {data.transferCount > 0 && (
@@ -104,8 +112,132 @@ export function DashboardView() {
         </div>
       )}
 
+      <MonthlyTrendCard trend={data.monthlyTrend} />
+
+      <FixMyFinance recommendations={data.recommendations} />
+
       <CategoryBreakdown totals={data.categoryTotals} />
     </section>
+  );
+}
+
+function HealthStrip({ score }: { score: HealthScore }) {
+  const tone =
+    score.composite >= 75 ? "good" : score.composite >= 50 ? "mid" : "low";
+  return (
+    <div className={`card health-strip tone-${tone}`}>
+      <div className="health-headline">
+        <div className="health-score-num">
+          {score.composite}
+          <span className="health-score-suffix">/100</span>
+        </div>
+        <div>
+          <div className="health-title">Financial health</div>
+          <p className="muted small health-blurb">
+            Weighted composite — savings rate 40%, debt burden 25%, essential
+            vs discretionary 20%, investment consistency 15%.
+          </p>
+        </div>
+      </div>
+      <ul className="health-drivers">
+        {score.drivers.map((d) => (
+          <li key={d.key} className="health-driver-row">
+            <div className="health-driver-head">
+              <span className="health-driver-label">{d.label}</span>
+              <span className="health-driver-weight muted xsmall">
+                {Math.round(d.weight * 100)}%
+              </span>
+              <span className="health-driver-score">{d.score}</span>
+            </div>
+            <div className="health-driver-bar" aria-hidden>
+              <div
+                className={`health-driver-fill driver-${driverTone(d.score)}`}
+                style={{ width: `${d.score}%` }}
+              />
+            </div>
+            <p className="muted xsmall health-driver-detail">{d.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function driverTone(score: number): "good" | "mid" | "low" {
+  if (score >= 75) return "good";
+  if (score >= 50) return "mid";
+  return "low";
+}
+
+function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
+  if (trend.length === 0) return null;
+  const max = trend.reduce((m, b) => {
+    const inc = Number.parseFloat(b.income) || 0;
+    const exp = Number.parseFloat(b.expense) || 0;
+    return Math.max(m, inc, exp);
+  }, 0);
+  if (max <= 0) return null;
+  return (
+    <div className="card monthly-trend-card">
+      <h3>Income vs expense by month</h3>
+      <ul className="trend-list">
+        {trend.map((b) => {
+          const inc = Number.parseFloat(b.income) || 0;
+          const exp = Number.parseFloat(b.expense) || 0;
+          const net = Number.parseFloat(b.net) || 0;
+          return (
+            <li key={b.month} className="trend-row">
+              <div className="trend-month mono">{b.month}</div>
+              <div className="trend-bars">
+                <div className="trend-bar-track" aria-label={`income ${b.income}`}>
+                  <div
+                    className="trend-bar-fill income"
+                    style={{ width: `${(inc / max) * 100}%` }}
+                  />
+                </div>
+                <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
+                  <div
+                    className="trend-bar-fill expense"
+                    style={{ width: `${(exp / max) * 100}%` }}
+                  />
+                </div>
+              </div>
+              <div className={`trend-net ${net >= 0 ? "credit" : "debit"}`}>
+                {net >= 0 ? "+" : "−"}₹{fmtINR(Math.abs(net).toFixed(2))}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function FixMyFinance({ recommendations }: { recommendations: Recommendation[] }) {
+  if (recommendations.length === 0) return null;
+  return (
+    <div className="card fix-finance-card">
+      <h3>Fix my finance</h3>
+      <p className="muted small">
+        Heuristic suggestions based on the data above. These will sharpen up as
+        the Loan Tracker and Investment Inputs tabs come online.
+      </p>
+      <ul className="recommendation-list">
+        {recommendations.map((r, i) => (
+          <li key={`${r.kind}-${i}`} className={`recommendation-row kind-${r.kind}`}>
+            <div className="recommendation-head">
+              <span className="recommendation-title">{r.title}</span>
+              {r.monthlyImpact && (
+                <span className="recommendation-impact">
+                  ≈ ₹{fmtINR(r.monthlyImpact)} savings
+                </span>
+              )}
+            </div>
+            <p className="muted small">{r.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

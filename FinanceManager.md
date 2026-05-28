@@ -239,7 +239,7 @@ Supporting pieces:
 - **Model selector in UI**: free-tier options (`gemini-2.0-flash`, `-flash-lite`, `gemini-2.5-flash`, `-flash-lite`) selectable from the LLM settings card. Switching the model auto-triggers re-categorization on the currently open import.
 - **Auto-recategorize triggers**: a new `recategorize_import` Tauri command re-runs the full pipeline on an existing import while preserving manual edits (rows whose `category_rule_id == "manual"` are untouched). It fires automatically when the user changes the LLM model, saves a new rule via the modal, or deletes a user rule. Cached `Uncategorized` entries are invalidated before the re-run so a model swap gets a fresh Gemini attempt.
 
-### 10.5 Dashboard tab — backbone (delivers part of 4.1)
+### 10.5 Dashboard tab — full (delivers 4.1)
 - New `dashboard_aggregate` Tauri command (`src-tauri/src/dashboard.rs`) walks every import for the unlocked profile, decrypts the transaction files, and produces a `DashboardData` containing: import count, transaction count, period bounds, total income, total expense, net savings, transfer count + total, and a category-totals list sorted by debit descending.
 - Money classification implements P3, P4, P5 decisions:
   - **Income**: rows categorized `Salary`, `Dividend`, `Interest`, `Refund`.
@@ -248,7 +248,13 @@ Supporting pieces:
   - **Refund offset**: a credit amount on an expense category reduces that category's net expense (e.g. an Amazon return).
 - New Dashboard tab in `Home` (now the default landing tab; replaces the placeholder welcome panel). Renders financial-overview tiles (Income, Expense, Net Savings + savings rate), a transfer-excluded note, and a category breakdown panel ("Where the money went" / "Money in").
 - Empty-state handling: until the user uploads a statement, the tab shows a "no statements yet" card pointing them to the Upload tab.
-- Tested: 7 unit tests cover the classification, transfer exclusion, cash-as-expense default, refund offset, period bounds, empty aggregate, and sort order.
+- **Monthly trend** (4.1.3): per-`YYYY-MM` bucketing of income vs expense, rendered as paired bars + a net-flow chip per month.
+- **Financial-health strip** (4.1.4): composite score 0–100 weighted per P5 (40% savings rate / 25% debt burden / 20% essential vs discretionary / 15% investment consistency). Each driver shows score + weight + one-line explainer + colored bar. Tone color (green / amber / red) on the strip's left border indicates overall health.
+  - Real drivers in v1: savings rate (capped at the 50% sweet spot for full marks) and essential-vs-discretionary (ratio of essential-category spend to total expense).
+  - Placeholder drivers: debt burden defaults to 100 (no loan data yet) and investment consistency defaults to 50 (neutral, no investment data). Both display an explainer indicating they'll sharpen up when Loan Tracker / Investment Inputs ship.
+- **Fix-my-finance panel** (4.1.2): heuristic recommendations. Leads with the top discretionary category trim-by-20% (only if the suggestion is worth ≥ ₹500). Adds emergency-fund or savings-stepup nudge keyed off the savings rate. Adds a behavioral nudge when discretionary spend exceeds 60% of expenses. Always closes with the "add your investments for a real score" reminder until that tab lands.
+- "Essential" category set: Rent, Electricity, Gas, Water, Mobile, Internet, Groceries, Maintenance, Insurance, Bills, Loan EMI, Tax, Train Travel, Fuel.
+- Tested: 13 unit tests cover classification, transfer exclusion, cash-as-expense default, refund offset, period bounds, monthly bucketing, health-score high/low ends, recommendation ordering, recommendation no-op cases, empty aggregate, and sort order.
 
 ### 10.6 Upload result surface (delivers 4.2.6, 4.2.7)
 - Per-statement summary tiles (Debits / Credits / Net flow).
@@ -258,7 +264,7 @@ Supporting pieces:
 - Previous imports list with click-to-view + delete.
 
 ### 10.7 Not yet implemented (Phase 1 backlog)
-- Dashboard tab (4.1) — **backbone shipped (10.5)**; remaining: monthly trend charts, financial-health composite score (P5 weights), fix-my-finance recommendations, investment snapshot integration.
+- Dashboard tab (4.1) — **shipped end-to-end (10.5)**. Investment-snapshot driver + loan-aware "fix my finance" recommendations remain blocked on the Investments and Loan Tracker tabs.
 - Past Analysis tab (4.3).
 - Investment Inputs tab (4.4).
 - Loan Tracker tab (4.5).
@@ -324,11 +330,16 @@ Single home for product, UX, and engineering decisions that have been raised but
 | ~~F-TDD-1~~ | `reapply_categories` invariants — covered by tests | 61e245c |
 | ~~P3~~ | Own-account transfers — **neutral**, excluded from income/expense. Implemented via category-based classification (`Credit Card Payment`, `Bank Transfer`). Pairing-by-amount across statements is a Phase-2 enhancement. | (decided + implemented; this commit) |
 | ~~P4~~ | Cash withdrawals — **treated as expense by default**. `ATM / Cash` category falls through the expense path in `classify_category`. User-marks-as-held remains a Phase-2 enhancement. | (decided + implemented; this commit) |
-| ~~P5~~ | Financial-health score weights — **40% savings rate, 25% debt burden, 20% essential vs discretionary, 15% investment consistency**. Implementation pending (next Dashboard slice). | (decided; impl pending) |
+| ~~P5~~ | Financial-health score weights — **40% savings rate, 25% debt burden, 20% essential vs discretionary, 15% investment consistency**. | (decided + implemented; this commit) |
 | ~~Audit F-TDD-1~~ | Income-arm `expense += debit` half-baked branch — removed; debit on income category no longer silently folded into expense (pinned by `salary_debit_is_ignored_not_silently_folded_into_expense`). | (this commit) |
 | ~~Audit F-SEC-1~~ | Unbounded `raw-transactions.json` decrypt+parse — 16 MB hard cap added in `dashboard.rs` before `serde_json::from_slice`. | (this commit) |
 | ~~Audit F-INF-3~~ | Category sort round-tripped through formatted strings (silently lossy on parse failure) — now sorts on in-memory `Decimal` before formatting. | (this commit) |
 | ~~Audit F-INF-4~~ | Dashboard Refresh re-entry — `useRef` in-flight guard prevents concurrent `dashboard_aggregate` invokes from rapid clicks. | (this commit) |
+| ~~Audit M1~~ | `decimal_to_f32` untested — added `decimal_to_f32_handles_edge_values` covering zero, fractional, and large-magnitude inputs. | (Dashboard-full commit) |
+| ~~Audit M2~~ | Malformed `txn_date` would have surfaced as a synthetic `"0000-00"` monthly-trend bucket — `parse_iso_month` now validates `YYYY-MM-DD` shape; bad rows still count in headline totals but are skipped from the trend. Pinned by `parse_iso_month_validates_shape` + `monthly_trend_skips_malformed_dates`. | (Dashboard-full commit) |
+| ~~Audit M3~~ | "Discretionary spend is large" behavioral nudge no longer fires when an `expense-cut` recommendation already named the specific category — prevents redundant advice. Pinned by `behavioral_nudge_skipped_when_expense_cut_already_fired`. | (Dashboard-full commit) |
+| ~~Audit M4~~ | `build_recommendations` no longer round-trips Decimals through formatted strings (avoiding the F-INF-3 regression pattern); it now takes a `&[(String, Decimal, u32, CategoryKind)]` snapshot of the sorted accumulator directly. | (Dashboard-full commit) |
+| ~~Audit M5~~ | `monthly_impact` is now genuinely per-month — recommendation divides the category's total debit by months in the period before the 20% trim. Pinned by `expense_cut_impact_is_monthly_not_period_total`. | (Dashboard-full commit) |
 
 ## 12. Pre-commit workflow (mandatory)
 For every commit that changes user-visible behavior:
