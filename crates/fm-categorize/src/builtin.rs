@@ -22,7 +22,8 @@ pub const CURATED_PRIORITY: i32 = 500;
 /// user's intent always wins on overlap.
 pub const USER_RULE_PRIORITY: i32 = 1000;
 
-/// The curated merchant table. ~25 high-precision brand strings.
+/// The curated merchant table. High-precision brand strings mapped to the
+/// canonical taxonomy in `src/categories.ts` / `llm.rs::ALLOWED_CATEGORIES`.
 pub fn curated_merchants() -> Vec<Rule> {
     vec![
         // Compound first so it wins the priority tie when nested in plain
@@ -37,13 +38,13 @@ pub fn curated_merchants() -> Vec<Rule> {
             "curated:swiggy",
             CURATED_PRIORITY,
             "swiggy",
-            "Food Delivery",
+            "Food expenses",
         ),
         contains_rule(
             "curated:zomato",
             CURATED_PRIORITY,
             "zomato",
-            "Food Delivery",
+            "Food expenses",
         ),
         contains_rule("curated:blinkit", CURATED_PRIORITY, "blinkit", "Groceries"),
         contains_rule("curated:zepto", CURATED_PRIORITY, "zepto", "Groceries"),
@@ -53,82 +54,107 @@ pub fn curated_merchants() -> Vec<Rule> {
             "bigbasket",
             "Groceries",
         ),
-        contains_rule("curated:rapido", CURATED_PRIORITY, "rapido", "Cab / Ride"),
+        contains_rule(
+            "curated:rapido",
+            CURATED_PRIORITY,
+            "rapido",
+            "Transportation",
+        ),
         contains_rule(
             "curated:uber-india",
             CURATED_PRIORITY,
             "uber india",
-            "Cab / Ride",
+            "Transportation",
         ),
-        contains_rule(
-            "curated:amazon",
-            CURATED_PRIORITY,
-            "amazon",
-            "Online Shopping",
-        ),
-        contains_rule(
-            "curated:flipkart",
-            CURATED_PRIORITY,
-            "flipkart",
-            "Online Shopping",
-        ),
-        contains_rule(
-            "curated:myntra",
-            CURATED_PRIORITY,
-            "myntra",
-            "Online Shopping",
-        ),
-        contains_rule(
-            "curated:meesho",
-            CURATED_PRIORITY,
-            "meesho",
-            "Online Shopping",
-        ),
-        contains_rule("curated:ajio", CURATED_PRIORITY, "ajio", "Online Shopping"),
+        contains_rule("curated:ola", CURATED_PRIORITY, "olacabs", "Transportation"),
+        contains_rule("curated:irctc", CURATED_PRIORITY, "irctc", "Transportation"),
+        contains_rule("curated:amazon", CURATED_PRIORITY, "amazon", "Shopping"),
+        contains_rule("curated:flipkart", CURATED_PRIORITY, "flipkart", "Shopping"),
+        contains_rule("curated:myntra", CURATED_PRIORITY, "myntra", "Shopping"),
+        contains_rule("curated:meesho", CURATED_PRIORITY, "meesho", "Shopping"),
+        contains_rule("curated:ajio", CURATED_PRIORITY, "ajio", "Shopping"),
         contains_rule(
             "curated:tata-cliq",
             CURATED_PRIORITY,
             "tata cliq",
-            "Online Shopping",
+            "Shopping",
         ),
-        contains_rule("curated:upstox", CURATED_PRIORITY, "upstox", "Investments"),
+        // Investment platforms — keep these split between FD / SIP / Stock
+        // purchase based on the platform's primary purpose. Mixed-use
+        // platforms (Zerodha, Groww) default to Stock purchase since
+        // direct equity is their headline product; the user can
+        // recategorize SIP rows specifically.
+        contains_rule(
+            "curated:upstox",
+            CURATED_PRIORITY,
+            "upstox",
+            "Stock purchase",
+        ),
         contains_rule(
             "curated:zerodha",
             CURATED_PRIORITY,
             "zerodha",
-            "Investments",
+            "Stock purchase",
         ),
-        contains_rule("curated:groww", CURATED_PRIORITY, "groww", "Investments"),
+        contains_rule("curated:groww", CURATED_PRIORITY, "groww", "SIP"),
+        contains_rule("curated:indmoney", CURATED_PRIORITY, "indmoney", "SIP"),
+        contains_rule("curated:kuvera", CURATED_PRIORITY, "kuvera", "SIP"),
+        contains_rule("curated:scripbox", CURATED_PRIORITY, "scripbox", "SIP"),
+        // Entertainment + streaming
         contains_rule(
-            "curated:indmoney",
+            "curated:bookmyshow",
             CURATED_PRIORITY,
-            "indmoney",
-            "Investments",
+            "bookmyshow",
+            "Entertainment",
         ),
-        contains_rule("curated:kuvera", CURATED_PRIORITY, "kuvera", "Investments"),
         contains_rule(
-            "curated:scripbox",
+            "curated:netflix",
             CURATED_PRIORITY,
-            "scripbox",
-            "Investments",
+            "netflix",
+            "Entertainment",
         ),
+        contains_rule(
+            "curated:spotify",
+            CURATED_PRIORITY,
+            "spotify",
+            "Entertainment",
+        ),
+        contains_rule(
+            "curated:hotstar",
+            CURATED_PRIORITY,
+            "hotstar",
+            "Entertainment",
+        ),
+        contains_rule(
+            "curated:prime-video",
+            CURATED_PRIORITY,
+            "prime video",
+            "Entertainment",
+        ),
+        // Credit-card bill payments via CRED / PayTM / etc.
         contains_rule(
             "curated:cred-club",
             CURATED_PRIORITY,
             "cred club",
-            "Credit Card Payment",
+            "Credit card bill",
         ),
         contains_rule(
             "curated:cred-dot-club",
             CURATED_PRIORITY,
             "cred.club",
-            "Credit Card Payment",
+            "Credit card bill",
         ),
         contains_rule(
             "curated:payment-on-cred",
             CURATED_PRIORITY,
             "payment on cred",
-            "Credit Card Payment",
+            "Credit card bill",
+        ),
+        contains_rule(
+            "curated:bppy-cc-payment",
+            CURATED_PRIORITY,
+            "bppy cc payment",
+            "Credit card bill",
         ),
         // HDFC credit-card EMI bookkeeping rows. When a transaction is
         // converted to EMI, the statement shows three related rows: the

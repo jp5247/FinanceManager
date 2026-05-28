@@ -399,13 +399,26 @@ fn is_essential(category: &str) -> bool {
     let n = category.trim().to_lowercase();
     matches!(
         n.as_str(),
-        "rent"
+        // New canonical names (user's category brief)
+        "electricity bill"
+            | "gas bill"
+            | "mobile/internet bill"
+            | "laundary bill"
+            | "home loan emi"
+            | "car loan emi"
+            | "cc emi"
+            | "fuel expenses"
+            | "vehicle repairs/maintenance"
+            | "medical expenses"
+            | "groceries"
+            | "transportation"
+            // Legacy names kept for back-compat with existing data
+            | "rent"
             | "electricity"
             | "gas"
             | "water"
             | "mobile"
             | "internet"
-            | "groceries"
             | "food"
             | "meals"
             | "maintenance"
@@ -708,7 +721,7 @@ fn classify_category(category: &str) -> CategoryKind {
     let n = category.trim().to_lowercase();
     if matches!(
         n.as_str(),
-        "salary" | "dividend" | "interest" | "refund" | "bonus" | "cashback"
+        "salary" | "side hustle" | "dividend" | "interest" | "refund" | "bonus" | "cashback"
     ) {
         return CategoryKind::Income;
     }
@@ -716,10 +729,12 @@ fn classify_category(category: &str) -> CategoryKind {
     // "EMI conversion" covers credit-card EMI bookkeeping: the loan
     // disbursement credit + the loan principal debit booking. They net
     // to zero and should not affect income or expense — only the actual
-    // monthly EMI installments (Loan EMI) are real expense.
+    // monthly EMI installments (Home Loan EMI / Car loan EMI / CC EMI)
+    // are real expense.
     if matches!(
         n.as_str(),
-        "credit card payment"
+        "credit card bill"
+            | "credit card payment"
             | "cc payment"
             | "bank transfer"
             | "emi conversion"
@@ -730,9 +745,13 @@ fn classify_category(category: &str) -> CategoryKind {
     }
     if matches!(
         n.as_str(),
-        "investments"
+        "sip"
+            | "stock purchase"
+            | "fd"
+            // Legacy / convenience synonyms — kept so older data and LLM
+            // outputs that drift slightly still route correctly.
+            | "investments"
             | "investment"
-            | "sip"
             | "sips"
             | "mutual fund"
             | "mutual funds"
@@ -743,7 +762,6 @@ fn classify_category(category: &str) -> CategoryKind {
             | "equity"
             | "stocks"
             | "fixed deposit"
-            | "fd"
             | "recurring deposit"
             | "rd"
     ) {

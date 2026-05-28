@@ -17,15 +17,12 @@ fn curated_table_has_entries() {
 
 #[test]
 fn curated_table_classifies_unambiguous_brands() {
-    assert_eq!(cat("UPI-SWIGGY-MERCHANT"), Some("Food Delivery".into()));
-    assert_eq!(cat("UPI-ZOMATO LTD"), Some("Food Delivery".into()));
-    assert_eq!(
-        cat("UPI-AMAZON SELLER SERVICES"),
-        Some("Online Shopping".into())
-    );
-    assert_eq!(cat("UPI-FLIPKART INTERNET"), Some("Online Shopping".into()));
-    assert_eq!(cat("UPI-UPSTOX SECURITIES"), Some("Investments".into()));
-    assert_eq!(cat("UPI-RAPIDO BIKE"), Some("Cab / Ride".into()));
+    assert_eq!(cat("UPI-SWIGGY-MERCHANT"), Some("Food expenses".into()));
+    assert_eq!(cat("UPI-ZOMATO LTD"), Some("Food expenses".into()));
+    assert_eq!(cat("UPI-AMAZON SELLER SERVICES"), Some("Shopping".into()));
+    assert_eq!(cat("UPI-FLIPKART INTERNET"), Some("Shopping".into()));
+    assert_eq!(cat("UPI-UPSTOX SECURITIES"), Some("Stock purchase".into()));
+    assert_eq!(cat("UPI-RAPIDO BIKE"), Some("Transportation".into()));
 }
 
 #[test]
@@ -36,14 +33,14 @@ fn swiggy_instamart_resolves_to_groceries_not_food_delivery() {
 }
 
 #[test]
-fn cred_payments_resolve_to_cc_payment() {
+fn cred_payments_resolve_to_credit_card_bill() {
     assert_eq!(
         cat("UPI-CRED CLUB-CRED.CLUB@AXISB"),
-        Some("Credit Card Payment".into())
+        Some("Credit card bill".into())
     );
     assert_eq!(
         cat("BPPY CC PAYMENT DP016 PAYMENT ON CRED"),
-        Some("Credit Card Payment".into())
+        Some("Credit card bill".into())
     );
 }
 
@@ -96,9 +93,10 @@ fn build_rules_preserves_both_tiers() {
     // Curated entry still works for unrelated narrations.
     assert_eq!(
         categorize(&rs, "UPI-FLIPKART INTERNET").map(|h| h.category),
-        Some("Online Shopping".into())
+        Some("Shopping".into())
     );
-    // User rule works.
+    // User rule works (the chosen category here is arbitrary — Rent is no
+    // longer in the canonical list but user rules are free-form labels).
     assert_eq!(
         categorize(&rs, "transfer for house rent april").map(|h| h.category),
         Some("Rent".into())

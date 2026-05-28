@@ -71,6 +71,9 @@ export const listTransactionsByMonth = (
 ): Promise<RawTransaction[]> =>
   invoke<RawTransaction[]>("list_transactions_by_month", { month });
 
+export const resetCategorizations = (): Promise<RecategorizeAllResult> =>
+  invoke<RecategorizeAllResult>("reset_categorizations");
+
 export const recategorizeTransaction = (
   importId: string,
   rowNumber: number,

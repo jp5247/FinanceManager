@@ -1432,6 +1432,18 @@ code {
   overflow: auto;
 }
 
+.rules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.rules-header h3 {
+  margin: 0;
+}
+
 /* --- Month drill: category-summary panel above the table --- */
 .month-summary {
   border: 1px solid var(--border);

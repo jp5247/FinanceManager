@@ -48,6 +48,7 @@ pub fn run() {
             upload::recategorize_all_imports,
             upload::list_transactions_by_category,
             upload::list_transactions_by_month,
+            upload::reset_categorizations,
             user_rules::list_user_rules,
             user_rules::delete_user_rule,
             llm_config::get_llm_config,

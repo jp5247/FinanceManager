@@ -431,6 +431,120 @@ pub fn list_transactions_by_category(
     Ok(out)
 }
 
+/// Wipe every user-customised categorization signal and re-categorize all
+/// imports from a clean slate. Specifically:
+///
+/// 1. Deletes all user rules (`mappings/category-rules.json`).
+/// 2. Empties the merchant cache (`mappings/merchant-cache.json`) so any
+///    cached LLM results — including "Uncategorized" entries — are gone.
+/// 3. For every import: clears each row's `category` and `category_rule_id`
+///    (including rows previously marked `manual`), then re-runs the full
+///    categorization pipeline (curated rules + optional LLM).
+///
+/// Returns the count of imports successfully touched.
+///
+/// Triggered by the "Reset categories" button in the user-rules panel.
+/// **Destructive** — any custom categories or manual recategorizations
+/// the user did are lost. The UI should confirm before invoking.
+#[tauri::command]
+pub fn reset_categorizations(state: State<AppState>) -> Result<RecategorizeAllResult, String> {
+    let (user, dek) = session(&state)?;
+
+    // 1. Wipe user rules.
+    crate::user_rules::save_rules(
+        &state,
+        &user,
+        &dek,
+        &crate::user_rules::UserRulesDoc::default(),
+    )?;
+
+    // 2. Empty the merchant cache.
+    merchant_cache::save(
+        &state,
+        &user,
+        &dek,
+        &merchant_cache::MerchantCacheDoc::default(),
+    )?;
+
+    // 3. Re-categorize every import from scratch. Use the upload-time
+    //    `apply_categories` (not `reapply_categories`) so manual rows are
+    //    also reset — this is intentional, the user asked for a clean
+    //    slate.
+    let rules = build_rules(vec![]);
+    let imports = list_imports_internal(&state, &user, &dek)?;
+    let total = imports.len() as u32;
+    let mut touched: u32 = 0;
+    let mut skipped: u32 = 0;
+    for m in imports {
+        match reset_one_import(&state, &user, &dek, &rules, &m.import_id) {
+            Ok(_) => touched += 1,
+            Err(e) => {
+                eprintln!("reset_categorizations: skipping {}: {e}", m.import_id);
+                skipped += 1;
+            }
+        }
+    }
+    Ok(RecategorizeAllResult {
+        total,
+        touched,
+        skipped,
+    })
+}
+
+fn reset_one_import(
+    state: &State<AppState>,
+    user: &UserId,
+    dek: &KeyBytes,
+    rules: &RuleSet,
+    import_id: &str,
+) -> Result<(), String> {
+    let meta_rel = upload_path(import_id, "file-meta.json");
+    let txn_rel = upload_path(import_id, "raw-transactions.json");
+    let meta_doc: VersionedJson<FileMeta> = read_encrypted_json(state, user, dek, &meta_rel)?;
+    let txn_doc: VersionedJson<Vec<RawTransaction>> =
+        read_encrypted_json(state, user, dek, &txn_rel)?;
+    if meta_doc.schema_version != FILE_META_SCHEMA {
+        return Err(format!("import {import_id} has unsupported meta schema"));
+    }
+    if txn_doc.schema_version != RAW_TXN_SCHEMA {
+        return Err(format!("import {import_id} has unsupported txn schema"));
+    }
+    let mut rows = txn_doc.data;
+    // Clear every row's prior categorization — including manual edits.
+    for r in &mut rows {
+        r.category = None;
+        r.category_rule_id = None;
+    }
+    apply_categories(&mut rows, rules);
+    let lookup = apply_external_lookup(state, user, dek, &mut rows);
+
+    let category_breakdown = build_category_breakdown(&rows);
+    let mut meta = meta_doc.data;
+    meta.category_breakdown = category_breakdown;
+
+    write_encrypted_json(
+        state,
+        user,
+        dek,
+        &meta_rel,
+        &VersionedJson::new(FILE_META_SCHEMA, &meta),
+    )?;
+    write_encrypted_json(
+        state,
+        user,
+        dek,
+        &txn_rel,
+        &VersionedJson::new(RAW_TXN_SCHEMA, &rows),
+    )?;
+
+    // Best-effort: surface a lookup warning to stderr but don't fail the
+    // whole reset over it.
+    if let Some(warning) = lookup.warning {
+        eprintln!("reset {}: {}", import_id, warning);
+    }
+    Ok(())
+}
+
 /// Cross-statement listing of every transaction whose `txnDate` falls in
 /// the given `YYYY-MM` month. Powers the per-month drill from the
 /// Dashboard's monthly-trend view so the user can see exactly which rows

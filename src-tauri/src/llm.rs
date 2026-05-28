@@ -20,40 +20,44 @@ use std::time::Duration;
 /// has a chance to roll over (Gemini's per-minute counter resets every 60s).
 const RATE_LIMIT_RETRY_DELAY: Duration = Duration::from_secs(8);
 
-/// What the LLM is told to choose from. Kept in sync with the categories
-/// the UI's recategorize picker offers.
+/// What the LLM is told to choose from. Kept in sync with `COMMON_CATEGORIES`
+/// in `src/categories.ts` — single source of truth for the canonical taxonomy.
 const ALLOWED_CATEGORIES: &[&str] = &[
-    "ATM / Cash",
-    "Air Travel",
-    "Bank Transfer",
-    "Bills",
-    "Cab / Ride",
-    "Credit Card Payment",
-    "Dividend",
-    "EMI Conversion",
-    "Electricity",
-    "Food Delivery",
-    "Fuel",
-    "Gas",
+    // Bills
+    "Credit card bill",
+    "Electricity bill",
+    "Gas bill",
+    "Mobile/Internet bill",
+    "Laundary bill",
+    // EMIs
+    "Home Loan EMI",
+    "Car loan EMI",
+    "CC EMI",
+    // Lifestyle expenses
+    "Food expenses",
+    "Hotel/Vacation expenses",
+    "Fuel expenses",
+    "Vehicle repairs/maintenance",
+    "Medical expenses",
     "Groceries",
-    "Insurance",
-    "Interest",
-    "Internet",
-    "Investments",
-    "Loan EMI",
-    "Maintenance",
-    "Mobile",
-    "Online Shopping",
-    "Personal Transfer",
-    "Refund",
-    "Rent",
-    "Restaurants",
+    "Transportation",
+    "Personal care",
+    "Shopping",
+    "Entertainment",
+    "Gifts",
+    // Income
     "Salary",
-    "Settlement / Split",
-    "Tax",
-    "Train Travel",
-    "UPI Transfer",
-    "Water",
+    "Side Hustle",
+    "Interest",
+    "Dividend",
+    "Refund",
+    // Wealth-building
+    "SIP",
+    "Stock purchase",
+    "FD",
+    // System / bookkeeping
+    "Bank Transfer",
+    "EMI Conversion",
     "Uncategorized",
 ];
 
@@ -274,15 +278,21 @@ fn build_prompt(items: &[LookupItem]) -> String {
     out.push('\n');
     out.push_str(
         "Use the direction (incoming = money in, outgoing = money out) to disambiguate. \
-         For example, 'INDIAN RAILWAY' incoming via NACH/ACH is a Dividend (IRFC shares); \
-         outgoing to 'IRCTC' is Train Travel. \
-         If the merchant is a person's name with no business context, use 'Personal Transfer'. \
-         Credit-card EMI bookkeeping rows (e.g. 'AGGREGATOR-EMI-OFFUSCREDIT', \
-         'EMI BOOKING', or any 'EMI <merchant>' row that represents the loan \
-         principal being booked rather than an actual monthly installment) \
-         should be 'EMI Conversion' — these net to zero across the loan \
-         disbursement. Only the actual recurring monthly EMI installment \
-         should be 'Loan EMI'. \
+         Examples for the Indian retail context: 'INDIAN RAILWAY' incoming via NACH/ACH is \
+         'Dividend' (IRFC shares); outgoing to 'IRCTC' is 'Transportation'. Swiggy / Zomato / \
+         restaurants → 'Food expenses'. Blinkit / Zepto / BigBasket → 'Groceries'. Amazon / \
+         Flipkart / Myntra → 'Shopping'. Uber / Rapido / metro / bus → 'Transportation'. \
+         BookMyShow / Netflix / cinema → 'Entertainment'. CRED / Payment on CRED → \
+         'Credit card bill'. \
+         Loan EMIs: choose 'Home Loan EMI' / 'Car loan EMI' / 'CC EMI' based on what the \
+         merchant string suggests; default to 'CC EMI' for credit-card statement rows. \
+         Side gigs (freelance, consulting, content) → 'Side Hustle'. \
+         Credit-card EMI bookkeeping rows (e.g. 'AGGREGATOR-EMI-OFFUSCREDIT', 'EMI BOOKING', \
+         or any 'EMI <merchant>' row that represents the loan principal being booked rather \
+         than an actual monthly installment) should be 'EMI Conversion' — these net to zero \
+         across the loan disbursement. \
+         If the merchant is a person's name with no business context, lean toward \
+         'Bank Transfer' (own-account) or the most likely expense category. \
          If you cannot confidently pick, return 'Uncategorized'.\n\n",
     );
     out.push_str("Return JSON matching the response schema. Each result's `index` must match the input item's number (1-based).\n\n");

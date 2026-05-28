@@ -9,6 +9,7 @@ import {
   listUserRules,
   recategorizeImport,
   recategorizeTransaction,
+  resetCategorizations,
   setLlmConfig,
   uploadPdf,
 } from "../ipc";
@@ -257,6 +258,34 @@ export function UploadView() {
             void runAutoRecategorize();
           } catch (e) {
             setError(String(e));
+          }
+        }}
+        onReset={async () => {
+          const ok = window.confirm(
+            "Reset categories?\n\n" +
+              "This will:\n" +
+              "  • delete every user rule you have saved\n" +
+              "  • clear the merchant cache\n" +
+              "  • re-categorize every uploaded statement from scratch (including rows you manually recategorized)\n\n" +
+              "Real outflows (uploads, transactions) stay safe. This action cannot be undone.",
+          );
+          if (!ok) return;
+          try {
+            setError(null);
+            const r = await resetCategorizations();
+            setUserRules(await listUserRules());
+            void refreshImports();
+            if (stage.kind === "viewing") {
+              const updated = await getImport(stage.displayed.importId);
+              setStage({ kind: "viewing", displayed: updated, isFresh: false });
+            }
+            setError(
+              `Reset done. Re-categorized ${r.touched} of ${r.total} import${
+                r.total === 1 ? "" : "s"
+              }.${r.skipped > 0 ? ` ${r.skipped} skipped — check dev logs.` : ""}`,
+            );
+          } catch (e) {
+            setError(`Reset failed: ${String(e)}`);
           }
         }}
       />
@@ -671,24 +700,50 @@ function TransactionTable({ rows, onEditCategory }: TableProps) {
 interface UserRulesPanelProps {
   rules: StoredRule[];
   onDelete: (id: string) => Promise<void>;
+  onReset: () => Promise<void>;
 }
 
-function UserRulesPanel({ rules, onDelete }: UserRulesPanelProps) {
+function UserRulesPanel({ rules, onDelete, onReset }: UserRulesPanelProps) {
   if (rules.length === 0) {
     return (
       <div className="card user-rules-card">
-        <h3>Your category rules</h3>
+        <div className="rules-header">
+          <h3>Your category rules</h3>
+          <button
+            type="button"
+            className="btn btn-link inline danger"
+            onClick={() => void onReset()}
+            title="Wipe user rules, clear cache, re-categorize every import"
+          >
+            Reset categories
+          </button>
+        </div>
         <p className="muted small">
           No saved rules yet. When you recategorize a transaction, tick
           "Save as a rule" to make the same category apply automatically to
           future matching transactions.
+        </p>
+        <p className="muted xsmall">
+          The <strong>Reset categories</strong> button clears any custom
+          categorizations you've already made and re-runs the pipeline using
+          only the curated rules + LLM. Use it when you want a clean slate.
         </p>
       </div>
     );
   }
   return (
     <div className="card user-rules-card">
-      <h3>Your category rules ({rules.length})</h3>
+      <div className="rules-header">
+        <h3>Your category rules ({rules.length})</h3>
+        <button
+          type="button"
+          className="btn btn-link inline danger"
+          onClick={() => void onReset()}
+          title="Wipe user rules, clear cache, re-categorize every import"
+        >
+          Reset categories
+        </button>
+      </div>
       <p className="muted small">
         Applied on every upload, before the built-in merchant table. Future
         statements with matching descriptions categorize automatically.
