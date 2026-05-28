@@ -276,6 +276,12 @@ Supporting pieces:
 - Inline note when N rows were categorized via Gemini in this run; magenta warning when external lookup failed (the upload itself always succeeds).
 - Previous imports list with click-to-view + delete.
 
+### 10.6.1 Dashboard empty-state correctness
+- Old: `DashboardView` early-returned with "No statements yet" whenever `data.importCount === 0`. This silently swallowed the Wealth Snapshot card if the user added investments before uploading a statement.
+- Fixed: render-eligibility is now `hasUploads || hasInvestments || hasLoans`. When uploads are absent, the cash-flow tiles, health strip, monthly trend, and category breakdown are suppressed; the Wealth Snapshot still renders for investment-only users with an inline header note explaining the missing slice.
+- Investment-Consistency driver detail now uses `investment_consistency_detail(months_with_investment, total_months, score)` to distinguish "no statements uploaded yet — driver is in placeholder mode" from "investing in X of Y tracked months" (both score 50 in the raw numerator). The new message explicitly notes that **Investments-tab positions feed the Wealth Snapshot tile, not this driver** — closing a common UX surprise.
+- Pinned by `investment_consistency_detail_distinguishes_placeholder_from_tracked`.
+
 ### 10.7 Investments tab (delivers 4.4)
 - Manual asset positions stored encrypted at `mappings/investments.json` (new `src-tauri/src/investments.rs`). Per-asset fields: id, asset type, asset name, invested amount, current value, last-updated timestamp, optional notes.
 - CRUD via four Tauri commands: `list_investments`, `upsert_investment`, `delete_investment`, `investments_summary`. The upsert command accepts comma-separated Indian-format decimals (e.g. `1,25,000.50`).

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dashboardAggregate, investmentsSummary } from "../ipc";
+import { dashboardAggregate, investmentsSummary, loansSummary } from "../ipc";
 import type {
   CategoryTotal,
   DashboardData,
   HealthScore,
   InvestmentsSummary,
+  LoansSummary,
   MonthlyBucket,
   Recommendation,
 } from "../types";
@@ -37,6 +38,7 @@ function clampPct(pct: number): number {
 export function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [invSummary, setInvSummary] = useState<InvestmentsSummary | null>(null);
+  const [loanSummary, setLoanSummary] = useState<LoansSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
@@ -51,12 +53,14 @@ export function DashboardView() {
     setLoading(true);
     setError(null);
     try {
-      const [d, inv] = await Promise.all([
+      const [d, inv, loans] = await Promise.all([
         dashboardAggregate(),
         investmentsSummary(),
+        loansSummary(),
       ]);
       setData(d);
       setInvSummary(inv);
+      setLoanSummary(loans);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -89,14 +93,23 @@ export function DashboardView() {
     );
   }
 
-  if (!data || data.importCount === 0) {
+  // Render-eligibility: any one of (uploads, investments, loans) is enough
+  // to show the dashboard. Previously we early-returned on `importCount==0`,
+  // which silently hid the Wealth Snapshot when the user had added
+  // investments but not yet uploaded a statement.
+  const hasUploads = !!data && data.importCount > 0;
+  const hasInvestments = !!invSummary && invSummary.assetCount > 0;
+  const hasLoans = !!loanSummary && loanSummary.loanCount > 0;
+
+  if (!data || (!hasUploads && !hasInvestments && !hasLoans)) {
     return (
       <section className="dashboard-view">
         <div className="card">
-          <h2>No statements yet</h2>
+          <h2>Nothing to show yet</h2>
           <p className="muted">
-            Upload a bank or credit-card PDF from the Upload tab and your
-            income, expenses, and category breakdown will appear here.
+            Upload a bank or credit-card PDF from the Upload tab, or add a
+            position in the Investments / Loans tab — anything you record
+            will surface here.
           </p>
         </div>
       </section>
@@ -109,9 +122,15 @@ export function DashboardView() {
         <div>
           <h2>Financial overview</h2>
           <p className="muted small">
-            {data.importCount} import{data.importCount === 1 ? "" : "s"} ·{" "}
-            {data.transactionCount} transaction{data.transactionCount === 1 ? "" : "s"} ·{" "}
-            {fmtDate(data.periodStart)} → {fmtDate(data.periodEnd)}
+            {hasUploads ? (
+              <>
+                {data.importCount} import{data.importCount === 1 ? "" : "s"} ·{" "}
+                {data.transactionCount} transaction{data.transactionCount === 1 ? "" : "s"} ·{" "}
+                {fmtDate(data.periodStart)} → {fmtDate(data.periodEnd)}
+              </>
+            ) : (
+              <>No statements uploaded yet — upload one to see income/expense.</>
+            )}
           </p>
         </div>
         <button className="btn btn-link inline" onClick={() => void refresh()}>
@@ -119,12 +138,12 @@ export function DashboardView() {
         </button>
       </header>
 
-      <HealthStrip score={data.healthScore} />
+      {hasUploads && <HealthStrip score={data.healthScore} />}
 
-      <OverviewTiles data={data} />
+      {hasUploads && <OverviewTiles data={data} />}
 
-      {invSummary && invSummary.assetCount > 0 && (
-        <WealthSnapshot summary={invSummary} />
+      {hasInvestments && (
+        <WealthSnapshot summary={invSummary!} />
       )}
 
       {data.transferCount > 0 && (

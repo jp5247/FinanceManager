@@ -529,6 +529,11 @@ fn compute_health_score(
     let ess_disc_score = essential_vs_discretionary_score(expense, essential);
     let invest_consistency_score =
         investment_consistency_score(months_with_investment, total_months);
+    let invest_consistency_explainer = investment_consistency_detail(
+        months_with_investment,
+        total_months,
+        invest_consistency_score,
+    );
 
     let weights = [
         ("savingsRate", "Savings rate", savings_rate_score, 0.40f32),
@@ -563,6 +568,8 @@ fn compute_health_score(
                 savings_rate_explainer.clone()
             } else if *key == "debtBurden" {
                 debt_burden_explainer.clone()
+            } else if *key == "investmentConsistency" {
+                invest_consistency_explainer.clone()
             } else {
                 driver_detail(key, *score)
             },
@@ -692,6 +699,36 @@ fn investment_consistency_score(months_with_investment: u32, total_months: u32) 
     }
     let ratio = (months_with_investment as f32) / (total_months as f32);
     (ratio * 100.0).round().clamp(0.0, 100.0) as u32
+}
+
+/// Investment-consistency driver detail. Needs the raw month counts (not
+/// just the score) to distinguish "no statements tracked yet" from
+/// "tracked months with some investments" — both can produce score 50.
+fn investment_consistency_detail(
+    months_with_investment: u32,
+    total_months: u32,
+    score: u32,
+) -> String {
+    if total_months == 0 {
+        return "Upload a bank statement to track monthly investment cadence. Asset positions in the Investments tab feed the Wealth Snapshot tile, not this driver.".into();
+    }
+    match score {
+        0 => format!(
+            "No investment outflows across {total_months} tracked month(s). Categorize SIPs / Mutual Fund / PPF / NPS rows to feed this driver."
+        ),
+        1..=33 => format!(
+            "Investing in {months_with_investment} of {total_months} tracked month(s) — under 1 in 3. A standing SIP would steady this."
+        ),
+        34..=66 => format!(
+            "Investing in {months_with_investment} of {total_months} tracked month(s). A standing SIP keeps it consistent."
+        ),
+        67..=99 => format!(
+            "Investing in {months_with_investment} of {total_months} tracked month(s) — close to a perfect SIP cadence."
+        ),
+        _ => format!(
+            "Investing every one of {total_months} tracked month(s). Strong consistency."
+        ),
+    }
 }
 
 fn essential_vs_discretionary_score(expense: Decimal, essential: Decimal) -> u32 {
@@ -997,6 +1034,47 @@ mod tests {
             .find(|x| x.key == "investmentConsistency")
             .unwrap();
         assert_eq!(inv.score, 100);
+    }
+
+    #[test]
+    fn investment_consistency_detail_distinguishes_placeholder_from_tracked() {
+        // No transactions at all → placeholder score 50 with a message that
+        // says "upload a statement" (NOT "investing in some months").
+        let d = summarise_rows(0, &[], None);
+        let inv = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "investmentConsistency")
+            .unwrap();
+        assert_eq!(inv.score, 50);
+        assert!(
+            inv.detail.contains("Upload"),
+            "expected upload-statement message, got: {}",
+            inv.detail
+        );
+
+        // Real data: 1 of 2 months tracked also scores 50 but the detail
+        // should reflect the actual ratio, NOT the placeholder.
+        let rows = vec![
+            row("2026-03-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-03-15", "SIP", "SIP", Some("10000.00"), None),
+            row("2026-04-01", "S", "Salary", None, Some("100000.00")),
+            row("2026-04-15", "X", "Groceries", Some("5000.00"), None),
+        ];
+        let d = summarise_rows(1, &rows, None);
+        let inv = d
+            .health_score
+            .drivers
+            .iter()
+            .find(|x| x.key == "investmentConsistency")
+            .unwrap();
+        assert_eq!(inv.score, 50);
+        assert!(
+            inv.detail.contains("1 of 2"),
+            "expected '1 of 2 tracked month(s)' message, got: {}",
+            inv.detail
+        );
     }
 
     #[test]
