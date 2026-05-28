@@ -34,6 +34,7 @@ export const COMMON_CATEGORIES: readonly string[] = [
   "Shopping",
   "Entertainment",
   "Gifts",
+  "Split",
   // Income
   "Salary",
   "Side Hustle",

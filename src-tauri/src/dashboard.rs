@@ -898,6 +898,59 @@ mod tests {
     }
 
     #[test]
+    fn split_category_nets_reimbursements_against_initial_outlay() {
+        // User pays ₹3,000 for a group dinner where their actual share is
+        // ₹1,000. A friend reimburses ₹2,000 a few days later. Both rows
+        // are categorized "Split" — the per-category clamp gives a net
+        // expense of ₹1,000, which is the user's real share.
+        let rows = vec![
+            row(
+                "2026-04-10",
+                "DINNER PAID FOR FRIENDS",
+                "Split",
+                Some("3000.00"),
+                None,
+            ),
+            row(
+                "2026-04-15",
+                "REIMBURSEMENT FROM FRIEND",
+                "Split",
+                None,
+                Some("2000.00"),
+            ),
+        ];
+        let d = summarise_rows(1, &rows);
+        assert_eq!(d.total_expense, "1000.00");
+        assert_eq!(d.total_income, "0.00");
+        assert_eq!(d.net_savings, "-1000.00");
+    }
+
+    #[test]
+    fn split_category_fully_settled_nets_to_zero_expense() {
+        // The user paid the entire bill on behalf of someone and was fully
+        // reimbursed — no real personal expense, no fake income either.
+        let rows = vec![
+            row(
+                "2026-04-10",
+                "PAID FOR SOMEONE",
+                "Split",
+                Some("2000.00"),
+                None,
+            ),
+            row(
+                "2026-04-15",
+                "FULL REIMBURSEMENT",
+                "Split",
+                None,
+                Some("2000.00"),
+            ),
+        ];
+        let d = summarise_rows(1, &rows);
+        assert_eq!(d.total_expense, "0.00");
+        assert_eq!(d.total_income, "0.00");
+    }
+
+    #[test]
     fn emi_conversion_rows_net_to_zero_across_income_and_expense() {
         // Real HDFC CC EMI conversion pattern: a ₹47,148 phone purchase
         // converted to EMI surfaces as three rows — the original

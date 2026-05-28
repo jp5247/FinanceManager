@@ -45,6 +45,7 @@ const ALLOWED_CATEGORIES: &[&str] = &[
     "Shopping",
     "Entertainment",
     "Gifts",
+    "Split",
     // Income
     "Salary",
     "Side Hustle",
@@ -287,6 +288,11 @@ fn build_prompt(items: &[LookupItem]) -> String {
          Loan EMIs: choose 'Home Loan EMI' / 'Car loan EMI' / 'CC EMI' based on what the \
          merchant string suggests; default to 'CC EMI' for credit-card statement rows. \
          Side gigs (freelance, consulting, content) → 'Side Hustle'. \
+         Expenses paid on someone else's behalf that the user expects to be \
+         reimbursed (group dinner where the user paid the whole bill, group \
+         travel pooled on the user's card, etc.) → 'Split'. The matching \
+         credit when the friend pays the user back should also be 'Split' so \
+         the two net out in the user's headline expense. \
          Credit-card EMI bookkeeping rows (e.g. 'AGGREGATOR-EMI-OFFUSCREDIT', 'EMI BOOKING', \
          or any 'EMI <merchant>' row that represents the loan principal being booked rather \
          than an actual monthly installment) should be 'EMI Conversion' — these net to zero \
