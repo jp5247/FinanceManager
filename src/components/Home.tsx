@@ -4,6 +4,7 @@ import type { ProfileSummary } from "../types";
 import { DashboardView } from "./DashboardView";
 import { InvestmentsView } from "./InvestmentsView";
 import { LoansView } from "./LoansView";
+import { PastAnalysisView } from "./PastAnalysisView";
 import { UploadView } from "./UploadView";
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
   onLocked: () => void;
 }
 
-type Tab = "dashboard" | "upload" | "investments" | "loans";
+type Tab = "dashboard" | "past" | "upload" | "investments" | "loans";
 
 function initial(name: string): string {
   const ch = name.trim().charAt(0);
@@ -59,6 +60,12 @@ export function Home({ me, onLocked }: Props) {
             Dashboard
           </button>
           <button
+            className={`tab ${tab === "past" ? "active" : ""}`}
+            onClick={() => setTab("past")}
+          >
+            Past Analysis
+          </button>
+          <button
             className={`tab ${tab === "upload" ? "active" : ""}`}
             onClick={() => setTab("upload")}
           >
@@ -97,6 +104,8 @@ export function Home({ me, onLocked }: Props) {
 
       {tab === "dashboard" ? (
         <DashboardView />
+      ) : tab === "past" ? (
+        <PastAnalysisView />
       ) : tab === "upload" ? (
         <UploadView />
       ) : tab === "investments" ? (

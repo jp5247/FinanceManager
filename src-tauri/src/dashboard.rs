@@ -134,13 +134,25 @@ pub struct CategoryTotal {
 }
 
 #[tauri::command]
-pub fn dashboard_aggregate(state: State<AppState>) -> Result<DashboardData, String> {
+pub fn dashboard_aggregate(
+    state: State<AppState>,
+    from_month: Option<String>,
+    to_month: Option<String>,
+) -> Result<DashboardData, String> {
     let (user, dek) = session(&state)?;
     let imports = list_imports_internal(&state, &user, &dek)?;
     // Best-effort: if the loans file is missing or malformed, debt burden
     // falls back to the placeholder. Don't fail the dashboard over it.
     let total_monthly_emi = crate::loans::total_monthly_emi(&state, &user, &dek).ok();
-    aggregate_imports(&state, &user, &dek, &imports, total_monthly_emi)
+    aggregate_imports(
+        &state,
+        &user,
+        &dek,
+        &imports,
+        total_monthly_emi,
+        from_month.as_deref(),
+        to_month.as_deref(),
+    )
 }
 
 fn aggregate_imports(
@@ -149,6 +161,8 @@ fn aggregate_imports(
     dek: &KeyBytes,
     imports: &[FileMeta],
     total_monthly_emi: Option<Decimal>,
+    from_month: Option<&str>,
+    to_month: Option<&str>,
 ) -> Result<DashboardData, String> {
     let mut all_rows: Vec<RawTransaction> = Vec::new();
 
@@ -181,11 +195,41 @@ fn aggregate_imports(
         all_rows.extend(doc.data);
     }
 
+    // Apply month-range filter if requested. Filters happen after the
+    // full-load so import_count stays honest about the underlying data.
+    let filtered: Vec<RawTransaction> = if from_month.is_some() || to_month.is_some() {
+        all_rows
+            .into_iter()
+            .filter(|r| row_in_range(&r.txn_date, from_month, to_month))
+            .collect()
+    } else {
+        all_rows
+    };
+
     Ok(summarise_rows(
         imports.len() as u32,
-        &all_rows,
+        &filtered,
         total_monthly_emi,
     ))
+}
+
+fn row_in_range(txn_date: &str, from: Option<&str>, to: Option<&str>) -> bool {
+    let month = match parse_iso_month(txn_date) {
+        Some(m) => m,
+        // Undated rows excluded from any explicit filter (they have no month).
+        None => return false,
+    };
+    if let Some(f) = from {
+        if month < f {
+            return false;
+        }
+    }
+    if let Some(t) = to {
+        if month > t {
+            return false;
+        }
+    }
+    true
 }
 
 fn summarise_rows(
@@ -962,6 +1006,28 @@ mod tests {
             .find(|x| x.key == "investmentConsistency")
             .unwrap();
         assert_eq!(inv.score, 50);
+    }
+
+    #[test]
+    fn row_in_range_inclusive_on_both_ends() {
+        assert!(row_in_range("2026-04-15", Some("2026-03"), Some("2026-05")));
+        assert!(row_in_range("2026-03-01", Some("2026-03"), Some("2026-05")));
+        assert!(row_in_range("2026-05-31", Some("2026-03"), Some("2026-05")));
+        assert!(!row_in_range(
+            "2026-02-15",
+            Some("2026-03"),
+            Some("2026-05")
+        ));
+        assert!(!row_in_range(
+            "2026-06-01",
+            Some("2026-03"),
+            Some("2026-05")
+        ));
+        // Open-ended ranges
+        assert!(row_in_range("2026-01-01", None, Some("2026-05")));
+        assert!(row_in_range("2030-12-31", Some("2026-03"), None));
+        // Malformed date with explicit filter → excluded.
+        assert!(!row_in_range("bad-date", Some("2026-03"), None));
     }
 
     #[test]

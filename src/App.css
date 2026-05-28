@@ -1432,6 +1432,58 @@ code {
   overflow: auto;
 }
 
+/* --- Past Analysis tab --- */
+.range-picker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.range-picker-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.range-picker-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.range-picker-row select {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.95rem;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.compare-grid .compare-deltas {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 960px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compare-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 /* --- Loans tab --- */
 .loans-view {
   display: flex;

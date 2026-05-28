@@ -130,5 +130,11 @@ export const getLlmConfig = (): Promise<LlmConfigView> =>
 export const setLlmConfig = (update: LlmConfigUpdate): Promise<LlmConfigView> =>
   invoke<LlmConfigView>("set_llm_config", { update });
 
-export const dashboardAggregate = (): Promise<DashboardData> =>
-  invoke<DashboardData>("dashboard_aggregate");
+export const dashboardAggregate = (
+  fromMonth?: string | null,
+  toMonth?: string | null,
+): Promise<DashboardData> =>
+  invoke<DashboardData>("dashboard_aggregate", {
+    fromMonth: fromMonth ?? null,
+    toMonth: toMonth ?? null,
+  });
