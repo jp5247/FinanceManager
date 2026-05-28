@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { lockProfile } from "../ipc";
 import type { ProfileSummary } from "../types";
+import { DashboardView } from "./DashboardView";
 import { UploadView } from "./UploadView";
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   onLocked: () => void;
 }
 
-type Tab = "home" | "upload";
+type Tab = "dashboard" | "upload";
 
 function initial(name: string): string {
   const ch = name.trim().charAt(0);
@@ -17,7 +18,7 @@ function initial(name: string): string {
 
 export function Home({ me, onLocked }: Props) {
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<Tab>("home");
+  const [tab, setTab] = useState<Tab>("dashboard");
 
   const lock = async () => {
     setBusy(true);
@@ -50,10 +51,10 @@ export function Home({ me, onLocked }: Props) {
 
         <nav className="tabs" aria-label="primary">
           <button
-            className={`tab ${tab === "home" ? "active" : ""}`}
-            onClick={() => setTab("home")}
+            className={`tab ${tab === "dashboard" ? "active" : ""}`}
+            onClick={() => setTab("dashboard")}
           >
-            Home
+            Dashboard
           </button>
           <button
             className={`tab ${tab === "upload" ? "active" : ""}`}
@@ -80,18 +81,7 @@ export function Home({ me, onLocked }: Props) {
         </div>
       </header>
 
-      {tab === "home" ? (
-        <section className="placeholder-panel">
-          <h2>Welcome, {me.displayName}.</h2>
-          <p className="muted">
-            Phase 1 backend is wired up — your profile is unlocked. Use the
-            Upload tab to import a bank statement; Dashboard, Loans and
-            Investments land in the next phases.
-          </p>
-        </section>
-      ) : (
-        <UploadView />
-      )}
+      {tab === "dashboard" ? <DashboardView /> : <UploadView />}
     </>
   );
 }

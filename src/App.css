@@ -966,6 +966,35 @@ code {
   border-color: rgba(0, 220, 255, 0.35);
 }
 
+/* --- Dashboard --- */
+.dashboard-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dash-header h2 {
+  margin: 0;
+}
+
+.dash-transfer-note {
+  padding: 0.5rem 0.8rem;
+  border-radius: 6px;
+  background: rgba(180, 180, 220, 0.06);
+  border: 1px solid var(--border);
+}
+
+.dash-category-card h3 {
+  margin: 0 0 0.4rem 0;
+}
+
 /* Stack tiles on narrow widths */
 @media (max-width: 720px) {
   .summary-tiles {

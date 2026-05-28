@@ -102,6 +102,28 @@ export interface LlmConfigView {
   apiKeySet: boolean;
 }
 
+export interface CategoryTotal {
+  category: string;
+  count: number;
+  totalDebit: string;
+  totalCredit: string;
+  /** `"income" | "expense" | "transfer"` */
+  kind: string;
+}
+
+export interface DashboardData {
+  importCount: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  transactionCount: number;
+  totalIncome: string;
+  totalExpense: string;
+  netSavings: string;
+  transferCount: number;
+  transferTotal: string;
+  categoryTotals: CategoryTotal[];
+}
+
 export interface LlmConfigUpdate {
   enabled?: boolean;
   model?: string;

@@ -239,15 +239,26 @@ Supporting pieces:
 - **Model selector in UI**: free-tier options (`gemini-2.0-flash`, `-flash-lite`, `gemini-2.5-flash`, `-flash-lite`) selectable from the LLM settings card. Switching the model auto-triggers re-categorization on the currently open import.
 - **Auto-recategorize triggers**: a new `recategorize_import` Tauri command re-runs the full pipeline on an existing import while preserving manual edits (rows whose `category_rule_id == "manual"` are untouched). It fires automatically when the user changes the LLM model, saves a new rule via the modal, or deletes a user rule. Cached `Uncategorized` entries are invalidated before the re-run so a model swap gets a fresh Gemini attempt.
 
-### 10.5 Upload result surface (delivers 4.2.6, 4.2.7)
+### 10.5 Dashboard tab — backbone (delivers part of 4.1)
+- New `dashboard_aggregate` Tauri command (`src-tauri/src/dashboard.rs`) walks every import for the unlocked profile, decrypts the transaction files, and produces a `DashboardData` containing: import count, transaction count, period bounds, total income, total expense, net savings, transfer count + total, and a category-totals list sorted by debit descending.
+- Money classification implements P3, P4, P5 decisions:
+  - **Income**: rows categorized `Salary`, `Dividend`, `Interest`, `Refund`.
+  - **Transfer** (P3): rows categorized `Credit Card Payment` or `Bank Transfer` — excluded from income/expense totals and surfaced separately.
+  - **Expense** (P4): everything else, including `ATM / Cash` (cash withdrawn is treated as spent by default).
+  - **Refund offset**: a credit amount on an expense category reduces that category's net expense (e.g. an Amazon return).
+- New Dashboard tab in `Home` (now the default landing tab; replaces the placeholder welcome panel). Renders financial-overview tiles (Income, Expense, Net Savings + savings rate), a transfer-excluded note, and a category breakdown panel ("Where the money went" / "Money in").
+- Empty-state handling: until the user uploads a statement, the tab shows a "no statements yet" card pointing them to the Upload tab.
+- Tested: 7 unit tests cover the classification, transfer exclusion, cash-as-expense default, refund offset, period bounds, empty aggregate, and sort order.
+
+### 10.6 Upload result surface (delivers 4.2.6, 4.2.7)
 - Per-statement summary tiles (Debits / Credits / Net flow).
 - "Where the money went" category breakdown bar chart per import.
 - Recategorize modal with optional "Save as a rule" → user rules panel below.
 - Inline note when N rows were categorized via Gemini in this run; magenta warning when external lookup failed (the upload itself always succeeds).
 - Previous imports list with click-to-view + delete.
 
-### 10.6 Not yet implemented (Phase 1 backlog)
-- Dashboard tab (4.1) — financial overview, fix-my-finance, trends, health strip.
+### 10.7 Not yet implemented (Phase 1 backlog)
+- Dashboard tab (4.1) — **backbone shipped (10.5)**; remaining: monthly trend charts, financial-health composite score (P5 weights), fix-my-finance recommendations, investment snapshot integration.
 - Past Analysis tab (4.3).
 - Investment Inputs tab (4.4).
 - Loan Tracker tab (4.5).
@@ -265,9 +276,6 @@ Single home for product, UX, and engineering decisions that have been raised but
 |---|---|---|
 | P1 | Definitive transaction category taxonomy (current LLM list of 31 is a working approximation, not a product decision) | Keep current list; revisit when Dashboard surfaces per-category insights |
 | P2 | Reimbursements (split): reduce spending immediately on mark, or only after settlement confirmation? | Immediate, with a "pending settlement" flag |
-| P3 | Own-account transfers (e.g. savings → CC payment): treat as neutral / exclude from income+expense? | Neutral by default; surface a visible "transfer" classification |
-| P4 | Cash withdrawals default treatment (expense vs holding) | Treat as expense unless user manually marks held cash |
-| P5 | Financial-health score weights (savings rate / debt burden / essential vs discretionary / investment consistency) | Equal weight (25% each) as v1 placeholder |
 | P6 | Loan classification criteria: rate threshold vs tax-benefit-and-asset-productivity vs net effective cost | Net effective borrowing cost (most defensible) |
 
 ### 11.2 UX / surfacing decisions
@@ -292,6 +300,12 @@ Single home for product, UX, and engineering decisions that have been raised but
 | E7 | Hash-chained audit-log UI surface in Phase 1? (Original 7.3.3 + Section 10.6 gap) | Yes — small viewer in settings |
 | E8 | Internet access blocked unless user explicitly enables per-lookup? (Original 7.3.4) | Status quo: profile-level toggle (LLM enabled flag); no per-lookup prompt |
 | E9 | Shared Gemini-models constants table between Rust (`llm_config.rs`) and TS (`UploadView.tsx`)? (Audit F-CRIT-5) | Keep separate; revisit if drift ever bites |
+| E10 | `Investments` and `Loan EMI` rows: stay bucketed as expense, or split into their own `Investment` / `Debt` cash-flow kinds? (Audit F-CRIT-2) | Stay as expense in v1; revisit when Loan Tracker (4.5) and Investment Inputs (4.4) ship and we can split EMI into principal-vs-interest |
+| E11 | `Personal Transfer` / `UPI Transfer` — should they be classified as Transfer (excluded from expense)? (Audit F-CRIT-1) | **Decided: no.** Both labels are too ambiguous (Personal = sending to a person; UPI = often paying a merchant); conservatively keeping as expense avoids silently zeroing real outflows. P3 transfer-exclusion stays scoped to `Credit Card Payment` and `Bank Transfer` |
+| E12 | Surface a `skippedImports` count when schema-mismatched / unreadable files are dropped from the dashboard aggregate? (Audit F-INF/critique on silent fallthroughs) | Add when a schema bump actually ships |
+| E13 | Trust LLM-set categories for P3 transfer exclusion, or require `category_rule_id` provenance from user/curated rules? (Audit F-SEC-5) | Status quo (trust the category label); revisit if we see Gemini hallucinations stamping real expenses as `Credit Card Payment` |
+| E14 | Migrate to a single "kind registry" table colocated with `ALLOWED_CATEGORIES` so Rust + TS + dashboard share one source of truth? (Audit option-B recommendation) | Defer to next Dashboard slice |
+| E15 | Move `dashboard_aggregate` decrypt-and-parse off the Tauri main command thread (spawn_blocking or memoized cache) before the working set grows past ~24 imports? (Audit F-INF-1) | Defer — current scale is fine |
 
 ### 11.4 Resolved (recent)
 
@@ -308,6 +322,13 @@ Single home for product, UX, and engineering decisions that have been raised but
 | ~~F-SEC-1~~ | API key in URL — fixed | 61e245c |
 | ~~F-SEC-2~~ | OD-5 egress guard — added | 61e245c |
 | ~~F-TDD-1~~ | `reapply_categories` invariants — covered by tests | 61e245c |
+| ~~P3~~ | Own-account transfers — **neutral**, excluded from income/expense. Implemented via category-based classification (`Credit Card Payment`, `Bank Transfer`). Pairing-by-amount across statements is a Phase-2 enhancement. | (decided + implemented; this commit) |
+| ~~P4~~ | Cash withdrawals — **treated as expense by default**. `ATM / Cash` category falls through the expense path in `classify_category`. User-marks-as-held remains a Phase-2 enhancement. | (decided + implemented; this commit) |
+| ~~P5~~ | Financial-health score weights — **40% savings rate, 25% debt burden, 20% essential vs discretionary, 15% investment consistency**. Implementation pending (next Dashboard slice). | (decided; impl pending) |
+| ~~Audit F-TDD-1~~ | Income-arm `expense += debit` half-baked branch — removed; debit on income category no longer silently folded into expense (pinned by `salary_debit_is_ignored_not_silently_folded_into_expense`). | (this commit) |
+| ~~Audit F-SEC-1~~ | Unbounded `raw-transactions.json` decrypt+parse — 16 MB hard cap added in `dashboard.rs` before `serde_json::from_slice`. | (this commit) |
+| ~~Audit F-INF-3~~ | Category sort round-tripped through formatted strings (silently lossy on parse failure) — now sorts on in-memory `Decimal` before formatting. | (this commit) |
+| ~~Audit F-INF-4~~ | Dashboard Refresh re-entry — `useRef` in-flight guard prevents concurrent `dashboard_aggregate` invokes from rapid clicks. | (this commit) |
 
 ## 12. Pre-commit workflow (mandatory)
 For every commit that changes user-visible behavior:

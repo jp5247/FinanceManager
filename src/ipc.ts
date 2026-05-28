@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CreateProfileResult,
+  DashboardData,
   FileMeta,
   LlmConfigUpdate,
   LlmConfigView,
@@ -79,3 +80,6 @@ export const getLlmConfig = (): Promise<LlmConfigView> =>
 
 export const setLlmConfig = (update: LlmConfigUpdate): Promise<LlmConfigView> =>
   invoke<LlmConfigView>("set_llm_config", { update });
+
+export const dashboardAggregate = (): Promise<DashboardData> =>
+  invoke<DashboardData>("dashboard_aggregate");

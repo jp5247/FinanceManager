@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod commands;
+mod dashboard;
 mod llm;
 mod llm_config;
 mod merchant_cache;
@@ -48,6 +49,7 @@ pub fn run() {
             user_rules::delete_user_rule,
             llm_config::get_llm_config,
             llm_config::set_llm_config,
+            dashboard::dashboard_aggregate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

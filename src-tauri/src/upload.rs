@@ -372,7 +372,7 @@ pub(crate) fn session(state: &State<AppState>) -> Result<(UserId, KeyBytes), Str
     Ok((s.user_id().clone(), s.key().clone()))
 }
 
-fn list_imports_internal(
+pub(crate) fn list_imports_internal(
     state: &State<AppState>,
     user: &UserId,
     dek: &KeyBytes,
