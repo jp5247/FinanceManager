@@ -431,6 +431,43 @@ pub fn list_transactions_by_category(
     Ok(out)
 }
 
+/// Cross-statement listing of every transaction whose `txnDate` falls in
+/// the given `YYYY-MM` month. Powers the per-month drill from the
+/// Dashboard's monthly-trend view so the user can see exactly which rows
+/// produced that month's income and expense.
+#[tauri::command]
+pub fn list_transactions_by_month(
+    month: String,
+    state: State<AppState>,
+) -> Result<Vec<RawTransaction>, String> {
+    let (user, dek) = session(&state)?;
+    let imports = list_imports_internal(&state, &user, &dek)?;
+    let target = month.trim();
+    let mut out: Vec<RawTransaction> = Vec::new();
+    for m in imports {
+        let txn_rel = upload_path(&m.import_id, "raw-transactions.json");
+        if !state
+            .storage
+            .exists(&user, &txn_rel)
+            .map_err(|e| e.to_string())?
+        {
+            continue;
+        }
+        let doc: VersionedJson<Vec<RawTransaction>> =
+            read_encrypted_json(&state, &user, &dek, &txn_rel)?;
+        if doc.schema_version != RAW_TXN_SCHEMA {
+            continue;
+        }
+        for r in doc.data {
+            if r.txn_date.starts_with(target) {
+                out.push(r);
+            }
+        }
+    }
+    out.sort_by(|a, b| b.txn_date.cmp(&a.txn_date));
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn delete_import(import_id: String, state: State<AppState>) -> Result<(), String> {
     let (user, _dek) = session(&state)?;

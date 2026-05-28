@@ -8,6 +8,7 @@ import type {
   Recommendation,
 } from "../types";
 import { CategoryDrillModal } from "./CategoryDrillModal";
+import { MonthDrillModal } from "./MonthDrillModal";
 
 const inrFormatter = new Intl.NumberFormat("en-IN", {
   minimumFractionDigits: 2,
@@ -37,6 +38,7 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
+  const [drillMonth, setDrillMonth] = useState<string | null>(null);
   // Re-entry guard via ref — React state updates are batched, so checking
   // `loading` inside refresh sees stale values during rapid clicks.
   const inFlight = useRef(false);
@@ -121,7 +123,10 @@ export function DashboardView() {
         </div>
       )}
 
-      <MonthlyTrendCard trend={data.monthlyTrend} />
+      <MonthlyTrendCard
+        trend={data.monthlyTrend}
+        onDrill={(month) => setDrillMonth(month)}
+      />
 
       <FixMyFinance recommendations={data.recommendations} />
 
@@ -134,6 +139,14 @@ export function DashboardView() {
         <CategoryDrillModal
           category={drillCategory}
           onClose={() => setDrillCategory(null)}
+          onChanged={() => void refresh()}
+        />
+      )}
+
+      {drillMonth && (
+        <MonthDrillModal
+          month={drillMonth}
+          onClose={() => setDrillMonth(null)}
           onChanged={() => void refresh()}
         />
       )}
@@ -189,7 +202,13 @@ function driverTone(score: number): "good" | "mid" | "low" {
   return "low";
 }
 
-function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
+function MonthlyTrendCard({
+  trend,
+  onDrill,
+}: {
+  trend: MonthlyBucket[];
+  onDrill: (month: string) => void;
+}) {
   if (trend.length === 0) return null;
   const max = trend.reduce((m, b) => {
     const inc = Number.parseFloat(b.income) || 0;
@@ -200,6 +219,10 @@ function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
   return (
     <div className="card monthly-trend-card">
       <h3>Income vs expense by month</h3>
+      <p className="muted xsmall trend-hint">
+        Click any month to see the transactions that produced its income and
+        expense.
+      </p>
       <ul className="trend-list">
         {trend.map((b) => {
           const inc = Number.parseFloat(b.income) || 0;
@@ -207,35 +230,42 @@ function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
           const net = Number.parseFloat(b.net) || 0;
           return (
             <li key={b.month} className="trend-row">
-              <div className="trend-month mono">{b.month}</div>
-              <div className="trend-bars">
-                <div className="trend-bar-row">
-                  <span className="trend-bar-label muted xsmall">In</span>
-                  <div className="trend-bar-track" aria-label={`income ${b.income}`}>
-                    <div
-                      className="trend-bar-fill income"
-                      style={{ width: `${clampPct((inc / max) * 100)}%` }}
-                    />
+              <button
+                type="button"
+                className="trend-row-btn"
+                onClick={() => onDrill(b.month)}
+                title={`See transactions in ${b.month}`}
+              >
+                <div className="trend-month mono">{b.month}</div>
+                <div className="trend-bars">
+                  <div className="trend-bar-row">
+                    <span className="trend-bar-label muted xsmall">In</span>
+                    <div className="trend-bar-track" aria-label={`income ${b.income}`}>
+                      <div
+                        className="trend-bar-fill income"
+                        style={{ width: `${clampPct((inc / max) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="trend-bar-amount credit">₹{fmtINR(b.income)}</span>
                   </div>
-                  <span className="trend-bar-amount credit">₹{fmtINR(b.income)}</span>
-                </div>
-                <div className="trend-bar-row">
-                  <span className="trend-bar-label muted xsmall">Out</span>
-                  <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
-                    <div
-                      className="trend-bar-fill expense"
-                      style={{ width: `${clampPct((exp / max) * 100)}%` }}
-                    />
+                  <div className="trend-bar-row">
+                    <span className="trend-bar-label muted xsmall">Out</span>
+                    <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
+                      <div
+                        className="trend-bar-fill expense"
+                        style={{ width: `${clampPct((exp / max) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="trend-bar-amount debit">₹{fmtINR(b.expense)}</span>
                   </div>
-                  <span className="trend-bar-amount debit">₹{fmtINR(b.expense)}</span>
                 </div>
-              </div>
-              <div className={`trend-net ${net >= 0 ? "credit" : "debit"}`}>
-                <div className="trend-net-label muted xsmall">Net</div>
-                <div>
-                  {net >= 0 ? "+" : "−"}₹{fmtINR(Math.abs(net).toFixed(2))}
+                <div className={`trend-net ${net >= 0 ? "credit" : "debit"}`}>
+                  <div className="trend-net-label muted xsmall">Net</div>
+                  <div>
+                    {net >= 0 ? "+" : "−"}₹{fmtINR(Math.abs(net).toFixed(2))}
+                  </div>
                 </div>
-              </div>
+              </button>
             </li>
           );
         })}

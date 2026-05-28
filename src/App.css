@@ -1124,15 +1124,41 @@ code {
   gap: 0.9rem;
 }
 
+.trend-hint {
+  margin: 0 0 0.5rem 0;
+}
+
 .trend-row {
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.trend-row-btn {
   display: grid;
   grid-template-columns: 5rem 1fr auto;
   align-items: center;
   gap: 0.8rem;
+  width: 100%;
   padding: 0.55rem 0.6rem;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
   border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.trend-row-btn:hover {
+  border-color: var(--neon-cyan);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.trend-row-btn:focus-visible {
+  outline: none;
+  border-color: var(--neon-cyan);
 }
 
 .trend-month {
@@ -1404,6 +1430,118 @@ code {
 .drill-table-wrapper {
   max-height: 60vh;
   overflow: auto;
+}
+
+/* --- Month drill: category-summary panel above the table --- */
+.month-summary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.month-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .month-summary-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.month-summary-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.month-summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.month-summary-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.month-summary-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.month-summary-total.credit {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.month-summary-total.debit {
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.month-summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.month-summary-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.month-summary-cat {
+  font-size: 0.92rem;
+}
+
+.month-summary-note {
+  grid-column: 1 / -1;
+  font-style: italic;
+}
+
+.month-summary-amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.month-summary-amt.credit {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.month-summary-amt.debit {
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.month-summary-net {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.month-summary-net.credit {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.month-summary-net.debit {
+  color: rgba(255, 130, 130, 0.95);
 }
 
 /* Stack tiles on narrow widths */

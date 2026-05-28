@@ -66,6 +66,11 @@ export const listTransactionsByCategory = (
 ): Promise<RawTransaction[]> =>
   invoke<RawTransaction[]>("list_transactions_by_category", { category });
 
+export const listTransactionsByMonth = (
+  month: string,
+): Promise<RawTransaction[]> =>
+  invoke<RawTransaction[]>("list_transactions_by_month", { month });
+
 export const recategorizeTransaction = (
   importId: string,
   rowNumber: number,
