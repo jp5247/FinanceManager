@@ -276,8 +276,16 @@ Supporting pieces:
 - Inline note when N rows were categorized via Gemini in this run; magenta warning when external lookup failed (the upload itself always succeeds).
 - Previous imports list with click-to-view + delete.
 
+### 10.6 Investments tab (delivers 4.4)
+- Manual asset positions stored encrypted at `mappings/investments.json` (new `src-tauri/src/investments.rs`). Per-asset fields: id, asset type, asset name, invested amount, current value, last-updated timestamp, optional notes.
+- CRUD via four Tauri commands: `list_investments`, `upsert_investment`, `delete_investment`, `investments_summary`. The upsert command accepts comma-separated Indian-format decimals (e.g. `1,25,000.50`).
+- `InvestmentsView` is the new third tab in `Home`. Shows three summary tiles (Total invested, Current value, Unrealized gain/loss with return %), an allocation breakdown by asset type, and a positions table with edit/delete. Add-asset form with a Custom… escape hatch for asset types beyond the canonical suggestions.
+- Dashboard integration: a new **Wealth snapshot** card appears under the overview tiles whenever the user has any positions. Shows current value, invested, unrealized gain/loss + return %, and an allocation strip with one pill per asset type.
+- Suggested asset types: Mutual Fund, Stock, FD, RD, PPF, NPS, ELSS, Bond, Gold, Real Estate, Crypto, Other.
+- Tested: 6 unit tests in `investments.rs` cover the summary math, allocation sorting, parse-amount Indian formatting, and edge cases (empty list, zero invested with positive value).
+
 ### 10.7 Not yet implemented (Phase 1 backlog)
-- Dashboard tab (4.1) — **shipped end-to-end (10.5)**. Investment-snapshot driver + loan-aware "fix my finance" recommendations remain blocked on the Investments and Loan Tracker tabs.
+- Dashboard tab (4.1) — **shipped end-to-end (10.5)**. Loan-aware "fix my finance" recommendations still blocked on the Loan Tracker tab.
 - Past Analysis tab (4.3).
 - Investment Inputs tab (4.4).
 - Loan Tracker tab (4.5).
@@ -329,6 +337,10 @@ Single home for product, UX, and engineering decisions that have been raised but
 | E19 | Lock the Dashboard `Refresh` button while `retroBusy` is true in the drill modal (defense-in-depth against the torn-read race on Windows). (Drill audit F-SEC-2) | Defer — chip-disable inside the drill modal already covers the in-modal race; cross-pane lock is belt-and-suspenders |
 | E20 | Switch `fm-storage` writes to atomic write-then-rename so concurrent readers can never see a truncated sealed file on Windows. | Defer to Phase-2 hardening |
 | E21 | Emit an audit-log entry when `recategorize_all_imports` runs (hashed-chain, per E7) so the user can see what triggered a retro-rewrite. | Defer until audit-log viewer ships (E7) |
+| E22 | Should the Dashboard's Investment Consistency driver switch from transaction-derived (monthly investment outflows) to positions-derived (manual Investments tab data) when the user has any assets entered? | Defer — keep transaction-derived in v1; revisit once the positions data has ≥ 3 months of history |
+| E23 | Asset valuation refresh nudge — "values last updated 47 days ago, consider refreshing" — to keep the Wealth Snapshot honest? | Defer — no nudge in v1; reconsider when Past Analysis ships |
+| E24 | Tighten `parse_amount` in `investments.rs` to reject European decimal format / mixed separators rather than silently stripping all commas? | Status quo (lenient); add only if a user reports confusion |
+| E25 | Auto-refresh Dashboard's Wealth Snapshot when the Investments tab mutates state (Tauri event emit, or shared store)? | Status quo (manual Refresh button); revisit if it confuses users |
 | U5 | Add a confirmation prompt before retroactive recategorize from the drill view? | No prompt; "Save as a rule" label already conveys it. Revisit if real users get surprised |
 
 ### 11.4 Resolved (recent)

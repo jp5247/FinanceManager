@@ -1432,6 +1432,129 @@ code {
   overflow: auto;
 }
 
+/* --- Investments tab + Wealth snapshot --- */
+.investments-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.asset-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.asset-form h3 {
+  margin: 0 0 0.4rem 0;
+}
+
+.asset-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.7rem;
+}
+
+.asset-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.asset-form-grid label > span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.asset-form-notes {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .asset-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wealth-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.wealth-headline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.wealth-blurb {
+  margin: 0;
+}
+
+.wealth-numbers {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.wealth-num {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.wealth-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.3rem;
+}
+
+.wealth-num.muted .wealth-amount {
+  font-weight: 500;
+  font-size: 1.1rem;
+}
+
+.wealth-num.net-positive .wealth-amount {
+  color: rgba(80, 220, 160, 0.95);
+}
+
+.wealth-num.net-negative .wealth-amount {
+  color: rgba(255, 130, 130, 0.95);
+}
+
+.wealth-pct {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.wealth-allocation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.wealth-alloc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(80, 200, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.wealth-alloc-pill strong {
+  color: rgba(80, 200, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
 .rules-header {
   display: flex;
   justify-content: space-between;

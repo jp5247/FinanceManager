@@ -155,6 +155,44 @@ export interface Recommendation {
   monthlyImpact: string | null;
 }
 
+export interface InvestmentAsset {
+  id: string;
+  assetType: string;
+  assetName: string;
+  /** Decimal string, e.g. "100000.00". */
+  investedAmount: string;
+  currentValue: string;
+  lastUpdatedAt: string;
+  notes?: string | null;
+}
+
+export interface UpsertInvestmentSpec {
+  /** Empty / undefined to create; existing id to update. */
+  id?: string;
+  assetType: string;
+  assetName: string;
+  investedAmount: string;
+  currentValue: string;
+  notes?: string | null;
+}
+
+export interface AllocationSlice {
+  assetType: string;
+  currentValue: string;
+  sharePct: string;
+  assetCount: number;
+}
+
+export interface InvestmentsSummary {
+  assetCount: number;
+  totalInvested: string;
+  totalCurrentValue: string;
+  unrealizedGainLoss: string;
+  /** Signed percent as decimal string, empty when invested === 0. */
+  returnPct: string;
+  allocation: AllocationSlice[];
+}
+
 export interface RecategorizeAllResult {
   total: number;
   touched: number;

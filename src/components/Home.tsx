@@ -2,6 +2,7 @@ import { useState } from "react";
 import { lockProfile } from "../ipc";
 import type { ProfileSummary } from "../types";
 import { DashboardView } from "./DashboardView";
+import { InvestmentsView } from "./InvestmentsView";
 import { UploadView } from "./UploadView";
 
 interface Props {
@@ -9,7 +10,7 @@ interface Props {
   onLocked: () => void;
 }
 
-type Tab = "dashboard" | "upload";
+type Tab = "dashboard" | "upload" | "investments";
 
 function initial(name: string): string {
   const ch = name.trim().charAt(0);
@@ -62,6 +63,12 @@ export function Home({ me, onLocked }: Props) {
           >
             Upload
           </button>
+          <button
+            className={`tab ${tab === "investments" ? "active" : ""}`}
+            onClick={() => setTab("investments")}
+          >
+            Investments
+          </button>
         </nav>
 
         <div className="user-chip">
@@ -81,7 +88,13 @@ export function Home({ me, onLocked }: Props) {
         </div>
       </header>
 
-      {tab === "dashboard" ? <DashboardView /> : <UploadView />}
+      {tab === "dashboard" ? (
+        <DashboardView />
+      ) : tab === "upload" ? (
+        <UploadView />
+      ) : (
+        <InvestmentsView />
+      )}
     </>
   );
 }

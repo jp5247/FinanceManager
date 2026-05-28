@@ -3,6 +3,8 @@ import type {
   CreateProfileResult,
   DashboardData,
   FileMeta,
+  InvestmentAsset,
+  InvestmentsSummary,
   LlmConfigUpdate,
   LlmConfigView,
   NewRuleSpec,
@@ -10,6 +12,7 @@ import type {
   RawTransaction,
   RecategorizeAllResult,
   StoredRule,
+  UpsertInvestmentSpec,
   UploadResult,
 } from "./types";
 
@@ -73,6 +76,20 @@ export const listTransactionsByMonth = (
 
 export const resetCategorizations = (): Promise<RecategorizeAllResult> =>
   invoke<RecategorizeAllResult>("reset_categorizations");
+
+export const listInvestments = (): Promise<InvestmentAsset[]> =>
+  invoke<InvestmentAsset[]>("list_investments");
+
+export const upsertInvestment = (
+  spec: UpsertInvestmentSpec,
+): Promise<InvestmentAsset> =>
+  invoke<InvestmentAsset>("upsert_investment", { spec });
+
+export const deleteInvestment = (id: string): Promise<void> =>
+  invoke<void>("delete_investment", { id });
+
+export const investmentsSummary = (): Promise<InvestmentsSummary> =>
+  invoke<InvestmentsSummary>("investments_summary");
 
 export const recategorizeTransaction = (
   importId: string,

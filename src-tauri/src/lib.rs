@@ -2,6 +2,7 @@
 
 mod commands;
 mod dashboard;
+mod investments;
 mod llm;
 mod llm_config;
 mod merchant_cache;
@@ -54,6 +55,10 @@ pub fn run() {
             llm_config::get_llm_config,
             llm_config::set_llm_config,
             dashboard::dashboard_aggregate,
+            investments::list_investments,
+            investments::upsert_investment,
+            investments::delete_investment,
+            investments::investments_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

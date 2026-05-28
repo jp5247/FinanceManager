@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dashboardAggregate } from "../ipc";
+import { dashboardAggregate, investmentsSummary } from "../ipc";
 import type {
   CategoryTotal,
   DashboardData,
   HealthScore,
+  InvestmentsSummary,
   MonthlyBucket,
   Recommendation,
 } from "../types";
@@ -35,6 +36,7 @@ function clampPct(pct: number): number {
 
 export function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [invSummary, setInvSummary] = useState<InvestmentsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
@@ -49,7 +51,12 @@ export function DashboardView() {
     setLoading(true);
     setError(null);
     try {
-      setData(await dashboardAggregate());
+      const [d, inv] = await Promise.all([
+        dashboardAggregate(),
+        investmentsSummary(),
+      ]);
+      setData(d);
+      setInvSummary(inv);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -116,6 +123,10 @@ export function DashboardView() {
 
       <OverviewTiles data={data} />
 
+      {invSummary && invSummary.assetCount > 0 && (
+        <WealthSnapshot summary={invSummary} />
+      )}
+
       {data.transferCount > 0 && (
         <div className="dash-transfer-note muted small">
           {data.transferCount} transfer{data.transferCount === 1 ? "" : "s"} totalling ₹
@@ -151,6 +162,60 @@ export function DashboardView() {
         />
       )}
     </section>
+  );
+}
+
+function WealthSnapshot({ summary }: { summary: InvestmentsSummary }) {
+  const invested = Number.parseFloat(summary.totalInvested) || 0;
+  const gain = Number.parseFloat(summary.unrealizedGainLoss) || 0;
+  const positive = gain >= 0;
+  return (
+    <div className="card wealth-snapshot">
+      <div className="wealth-headline">
+        <div>
+          <div className="health-title">Wealth snapshot</div>
+          <p className="muted small wealth-blurb">
+            From your manually-entered positions in the Investments tab.
+            Update current values periodically to keep this honest.
+          </p>
+        </div>
+        <div className="wealth-numbers">
+          <div className="wealth-num">
+            <div className="muted xsmall">Current value</div>
+            <div className="wealth-amount">₹{fmtINR(summary.totalCurrentValue)}</div>
+          </div>
+          <div className="wealth-num">
+            <div className="muted xsmall">Invested</div>
+            <div className="wealth-amount muted">₹{fmtINR(summary.totalInvested)}</div>
+          </div>
+          <div className={`wealth-num ${positive ? "net-positive" : "net-negative"}`}>
+            <div className="muted xsmall">Unrealized</div>
+            <div className="wealth-amount">
+              {positive ? "+" : "−"}₹{fmtINR(Math.abs(gain).toFixed(2))}
+              {invested > 0 && summary.returnPct ? (
+                <span className="wealth-pct">
+                  {" "}({positive ? "+" : ""}
+                  {summary.returnPct}%)
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+      {summary.allocation.length > 1 && (
+        <div className="wealth-allocation">
+          {summary.allocation.map((a) => {
+            const share = Math.max(0, Math.min(100, Number.parseFloat(a.sharePct) || 0));
+            return (
+              <div key={a.assetType} className="wealth-alloc-pill" title={`₹${fmtINR(a.currentValue)} (${a.assetCount} asset${a.assetCount === 1 ? "" : "s"})`}>
+                <span>{a.assetType}</span>
+                <strong>{share.toFixed(0)}%</strong>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
