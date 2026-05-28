@@ -25,6 +25,13 @@ function fmtDate(iso: string | null): string {
   return iso;
 }
 
+/** Clamp a percentage into [0, 100] so an invalid (negative or NaN) value
+ * never lets `width: "-32%"` fall back to `auto` and stretch the bar. */
+function clampPct(pct: number): number {
+  if (!Number.isFinite(pct)) return 0;
+  return Math.max(0, Math.min(100, pct));
+}
+
 export function DashboardView() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -207,7 +214,7 @@ function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
                   <div className="trend-bar-track" aria-label={`income ${b.income}`}>
                     <div
                       className="trend-bar-fill income"
-                      style={{ width: `${(inc / max) * 100}%` }}
+                      style={{ width: `${clampPct((inc / max) * 100)}%` }}
                     />
                   </div>
                   <span className="trend-bar-amount credit">₹{fmtINR(b.income)}</span>
@@ -217,7 +224,7 @@ function MonthlyTrendCard({ trend }: { trend: MonthlyBucket[] }) {
                   <div className="trend-bar-track" aria-label={`expense ${b.expense}`}>
                     <div
                       className="trend-bar-fill expense"
-                      style={{ width: `${(exp / max) * 100}%` }}
+                      style={{ width: `${clampPct((exp / max) * 100)}%` }}
                     />
                   </div>
                   <span className="trend-bar-amount debit">₹{fmtINR(b.expense)}</span>
@@ -404,7 +411,7 @@ function BreakdownSection({
         {rows.map((t) => {
           const raw = amountKind === "debit" ? t.totalDebit : t.totalCredit;
           const amt = Number.parseFloat(raw) || 0;
-          const pct = total > 0 ? (amt / total) * 100 : 0;
+          const pct = total > 0 ? clampPct((amt / total) * 100) : 0;
           return (
             <li key={t.category} className={`breakdown-row ${accent}`}>
               <button

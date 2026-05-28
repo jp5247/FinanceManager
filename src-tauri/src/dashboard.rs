@@ -242,13 +242,26 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
                 // it into expense — the user can recategorize.
             }
             CategoryKind::Expense => {
-                let row_expense = debit - credit;
-                expense += row_expense;
-                if let Some(k) = month_key.as_deref() {
-                    by_month.entry(k.to_string()).or_default().expense += row_expense;
+                // Direction-by-direction: a debit on an expense category is
+                // a real outflow; a credit on the same category (refund,
+                // return) is income. Previously we netted them per-row,
+                // which let a single category's refunds pull the whole
+                // month's expense negative — surfacing as a "−₹X" out-bar
+                // in the UI and inflating Net.
+                if debit > Decimal::ZERO {
+                    expense += debit;
+                    if let Some(k) = month_key.as_deref() {
+                        by_month.entry(k.to_string()).or_default().expense += debit;
+                    }
+                    if is_essential(cat) {
+                        essential_spend += debit;
+                    }
                 }
-                if is_essential(cat) && row_expense > Decimal::ZERO {
-                    essential_spend += row_expense;
+                if credit > Decimal::ZERO {
+                    income += credit;
+                    if let Some(k) = month_key.as_deref() {
+                        by_month.entry(k.to_string()).or_default().income += credit;
+                    }
                 }
             }
             CategoryKind::Transfer => {
@@ -258,14 +271,19 @@ fn summarise_rows(import_count: u32, rows: &[RawTransaction]) -> DashboardData {
                 }
             }
             CategoryKind::Investment => {
-                // Investment kind is debit-leaning: SIPs, lump sums, PPF
-                // contributions. Credit-side flows (redemptions, dividend
-                // reinvestment) net against the same month's investment
-                // outflow; this is fine until the Investments tab ships
-                // and we can model the asset side properly.
-                let row_invest = debit - credit;
-                if let Some(k) = month_key.as_deref() {
-                    by_month.entry(k.to_string()).or_default().investment += row_invest;
+                // Same split as Expense: a debit is the wealth-building
+                // outflow (SIP, PPF), a credit is a payout / redemption
+                // → income for the cash-flow tile.
+                if debit > Decimal::ZERO {
+                    if let Some(k) = month_key.as_deref() {
+                        by_month.entry(k.to_string()).or_default().investment += debit;
+                    }
+                }
+                if credit > Decimal::ZERO {
+                    income += credit;
+                    if let Some(k) = month_key.as_deref() {
+                        by_month.entry(k.to_string()).or_default().income += credit;
+                    }
                 }
             }
         }
@@ -874,9 +892,12 @@ mod tests {
     }
 
     #[test]
-    fn refund_credit_offsets_an_expense_category() {
+    fn credit_on_expense_category_lands_in_income_not_negative_expense() {
         // Spending ₹1,000 at Amazon, getting ₹400 back on a return, both
-        // ending up under "Online Shopping" — net should be ₹600 expense.
+        // ending up under "Online Shopping". Per-row cash-flow direction
+        // wins: the ₹1,000 debit is real expense and the ₹400 credit is
+        // refund-income. Net savings is the same (₹400 − ₹1000 = -₹600)
+        // but neither tile shows a negative number.
         let rows = vec![
             row(
                 "2026-04-05",
@@ -894,7 +915,12 @@ mod tests {
             ),
         ];
         let d = summarise_rows(1, &rows);
-        assert_eq!(d.total_expense, "600.00");
+        assert_eq!(d.total_expense, "1000.00");
+        assert_eq!(d.total_income, "400.00");
+        assert_eq!(d.net_savings, "-600.00");
+        // Monthly bucket must never carry a negative expense.
+        assert_eq!(d.monthly_trend[0].expense, "1000.00");
+        assert_eq!(d.monthly_trend[0].income, "400.00");
     }
 
     #[test]
